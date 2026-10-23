@@ -14,6 +14,12 @@ const METEOR_TYPES = [         // r = radius, hp = durabilitas (kecil = 1 tembak
     { r: 12, hp: 45 },
     { r: 18, hp: 90 },
 ];
+const PICKUP_MAX = 6;            // maks pickup di dunia
+const PICKUP_SPAWN_CHANCE = 0.006; // peluang spawn per frame
+const PICKUP_RADIUS = 14;
+const PICKUP_SEEK = 700;         // jarak bot mencari pickup (px)
+const HEAL_AMOUNT = 30;          // pickup health
+const MAG_AMOUNT = 1;            // pickup magazine
 const AVOID_METEOR = 80;   // jarak aman bot dari meteor (px)
 const AVOID_SHIP = 60;     // jarak aman bot dari pesawat lain (px, di luar badan)
 
@@ -23,8 +29,8 @@ const TEAMS = {
 };
 
 const STATS = {
-    player: { turn: 0.35, main: 0.25, rev: 0.08, rcsUse: 0.4, mainUse: 0.5, mainRegen: 0.25, cooldown: 120, wallDamage: true, maxAmmo: 20, ammoRegen: 0.05, ammoUnlock: 10 },
-    bot: { turn: 0.2, main: 0.12, rev: 0.1, rcsUse: 0.4, mainUse: 0.4, mainRegen: 0.3, cooldown: 1000, wallDamage: false, maxAmmo: 6, ammoRegen: 0.008, ammoUnlock: 3 },
+    player: { turn: 0.35, main: 0.25, rev: 0.08, rcsUse: 0.4, mainUse: 0.5, mainRegen: 0.25, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
+    bot: { turn: 0.2, main: 0.12, rev: 0.1, rcsUse: 0.4, mainUse: 0.4, mainRegen: 0.3, cooldown: 1000, wallDamage: false, magSize: 6, startMags: 2, maxMags: 3, reload: 2000 },
 };
 
 // ================= DOM HUD PLAYER =================
@@ -41,6 +47,7 @@ const keys = {};
 const ships = [];
 const bullets = [];
 const meteors = [];
+const pickups = [];
 const cam = { x: 0, y: 0 };   // pojok kiri-bawah layar dalam koordinat dunia
 
 // ================= UTIL =================
@@ -150,7 +157,7 @@ class Ship {
             x, y, angle, vx: 0, vy: 0, vAngle: 0,
             hull: MAX_HULL, main: MAX_FUEL, rcs: MAX_FUEL,
             mainEmpty: false, rcsEmpty: false,
-            ammo: this.p.maxAmmo, ammoEmpty: false,
+            ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
             dead: false, invuln: false, lastShot: 0,
             input: {}, fx: {},
         });
@@ -215,7 +222,8 @@ class Ship {
             return;
         }
 
-        const t = this.nearestEnemy();
+        const pk = this.seekPickup();
+        const t = pk || this.nearestEnemy();
         if (!t) return;
 
         const dx = t.x - this.x, dy = t.y - this.y;
@@ -225,6 +233,7 @@ class Ship {
         while (diff > 180) diff -= 360;
 
         if (Math.abs(diff) > 6) { i.left = diff < 0; i.right = diff > 0; }
+        if (pk) { if (Math.abs(diff) < 40) i.thrust = true; return; }
         if (dist > 320) i.thrust = true;
         else if (dist < 180) i.reverse = true;
         if (Math.abs(diff) < 8 && dist < 450) i.shoot = true;
@@ -259,12 +268,14 @@ class Ship {
         this.vx *= FRICTION; this.vy *= FRICTION;
         this.x += this.vx; this.y += this.vy;
 
-        // Amunisi: habis -> terkunci sampai terisi ulang >= ammoUnlock
-        if (this.ammo < 1) this.ammoEmpty = true;
-        else if (this.ammoEmpty && this.ammo >= p.ammoUnlock) this.ammoEmpty = false;
-        this.ammo = Math.min(p.maxAmmo, this.ammo + p.ammoRegen);
+        // Magazine: peluru di magazine habis -> reload otomatis (pakai 1 magazine cadangan).
+        // Jika magazine cadangan juga habis, tidak bisa menembak sampai ambil pickup.
+        if (this.reloadUntil && ts >= this.reloadUntil) {
+            this.reloadUntil = 0; this.ammo = p.magSize; this.mags--;
+        }
+        if (!this.reloadUntil && this.ammo < 1 && this.mags > 0) this.reloadUntil = ts + p.reload;
 
-        if (i.shoot && !this.ammoEmpty && ts - this.lastShot > p.cooldown) {
+        if (i.shoot && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
             this.shoot();
             this.ammo -= 1;
             this.lastShot = ts;
@@ -315,6 +326,25 @@ class Ship {
         if (idx >= 0) ships.splice(idx, 1);
     }
 
+    canUse(type) { return type === 'health' ? this.hull < MAX_HULL : this.mags < this.p.maxMags; }
+
+    apply(type) {
+        if (type === 'health') this.hull = Math.min(MAX_HULL, this.hull + HEAL_AMOUNT);
+        else this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
+    }
+
+    // Bot mencari pickup terdekat yang dibutuhkan (hull < 60 atau magazine habis)
+    seekPickup() {
+        let best = null, bestD = PICKUP_SEEK;
+        for (const k of pickups) {
+            const need = k.type === 'health' ? this.hull < 60 : this.mags < 1;
+            if (!need) continue;
+            const d = Math.hypot(k.x - this.x, k.y - this.y);
+            if (d < bestD) { bestD = d; best = k; }
+        }
+        return best;
+    }
+
     render() {
         this.el.style.transform = `translate(${this.x - W / 2 - cam.x}px, ${-(this.y - H / 2 - cam.y)}px) rotate(${this.angle}deg)`;
         for (const k in this.fxEls) this.fxEls[k].classList.toggle('hidden', !this.fx[k === 'rev' ? 'rev' : k]);
@@ -326,14 +356,17 @@ class Ship {
             mainFuelText.textContent = `${Math.round(this.main)}%`;
             rcsFuelBar.style.width = `${this.rcs}%`;
             rcsFuelText.textContent = `${Math.round(this.rcs)}%`;
-            ammoBar.style.width = `${(this.ammo / this.p.maxAmmo) * 100}%`;
-            ammoBar.style.opacity = this.ammoEmpty ? 0.4 : 1;
-            ammoText.textContent = this.ammoEmpty ? 'RELOAD' : `${Math.floor(this.ammo)}/${this.p.maxAmmo}`;
+            const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
+            ammoBar.style.width = `${(this.ammo / this.p.magSize) * 100}%`;
+            ammoBar.style.opacity = this.reloadUntil ? 0.4 : 1;
+            ammoText.textContent = noAmmo ? 'NO AMMO'
+                : this.reloadUntil ? `RELOAD · MAG ${this.mags}`
+                    : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
         } else {
             this.hud.style.transform = `translate(${this.x - 28 - cam.x}px, ${-(this.y + H / 2 + 6 - cam.y)}px)`;
             this.hudBar.style.width = `${this.hull}%`;
-            this.hudAmmo.style.width = `${(this.ammo / this.p.maxAmmo) * 100}%`;
-            this.hudAmmo.style.opacity = this.ammoEmpty ? 0.4 : 1;
+            this.hudAmmo.style.width = `${(this.ammo / this.p.magSize) * 100}%`;
+            this.hudAmmo.style.opacity = this.reloadUntil ? 0.4 : 1;
         }
     }
 }
@@ -369,6 +402,7 @@ function resetGame() {
     Object.keys(keys).forEach(k => keys[k] = false);
     bullets.forEach(b => b.el.remove()); bullets.length = 0;
     meteors.forEach(m => m.el.remove()); meteors.length = 0;
+    pickups.forEach(k => k.el.remove()); pickups.length = 0;
 
     gameOverBox.classList.add('hidden');
     INITIAL_BOTS.forEach(spawnBot);
@@ -463,6 +497,49 @@ function updateBullets() {
     }
 }
 
+// ================= PICKUP (HEALTH & MAGAZINE) =================
+const PICKUP_TYPES = {
+    health: { color: '#22c55e', icon: '<path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z" fill="#fff"/>' },
+    mag: { color: '#eab308', icon: '<rect x="8" y="3" width="8" height="18" rx="1.5" fill="#fff"/><path d="M8 8h8M8 12h8M8 16h8" stroke="#a16207" stroke-width="1.5"/>' },
+};
+
+function spawnPickup() {
+    if (pickups.length >= PICKUP_MAX) return;
+    const type = Math.random() < 0.5 ? 'health' : 'mag';
+    const c = PICKUP_TYPES[type];
+    const el = document.createElement('div');
+    el.className = 'fixed left-0 bottom-0 pointer-events-none z-10';
+    el.style.width = el.style.height = `${PICKUP_RADIUS * 2}px`;
+    el.innerHTML = `<svg viewBox="0 0 24 24" class="w-full h-full animate-pulse" style="filter:drop-shadow(0 0 6px ${c.color})">
+        <rect x="1" y="1" width="22" height="22" rx="5" fill="${c.color}"/>${c.icon}</svg>`;
+    document.body.appendChild(el);
+    pickups.push({
+        el, type,
+        x: cam.x + (Math.random() * 1.4 - 0.2) * window.innerWidth,
+        y: cam.y + (Math.random() * 1.4 - 0.2) * window.innerHeight,
+    });
+}
+
+function updatePickups() {
+    if (Math.random() < PICKUP_SPAWN_CHANCE) spawnPickup();
+    const far = Math.hypot(window.innerWidth, window.innerHeight) * 1.2;
+
+    for (let i = pickups.length - 1; i >= 0; i--) {
+        const k = pickups[i];
+        k.el.style.transform = `translate(${k.x - PICKUP_RADIUS - cam.x}px, ${-(k.y - PICKUP_RADIUS - cam.y)}px)`;
+
+        if (Math.hypot(k.x - (cam.x + window.innerWidth / 2), k.y - (cam.y + window.innerHeight / 2)) > far) {
+            k.el.remove(); pickups.splice(i, 1);
+            continue;
+        }
+        const taker = ships.find(s => !s.dead && s.canUse(k.type) && Math.hypot(s.x - k.x, s.y - k.y) < s.radius + PICKUP_RADIUS);
+        if (taker) {
+            taker.apply(k.type);
+            k.el.remove(); pickups.splice(i, 1);
+        }
+    }
+}
+
 // ================= GAME LOOP =================
 function gameLoop(ts) {
     if (Math.random() < 0.03) spawnMeteor();
@@ -487,6 +564,7 @@ function gameLoop(ts) {
 
     updateCamera();
     updateBackground();
+    updatePickups();
     updateBullets();
     updateMeteors();
     ships.forEach(s => s.render());
