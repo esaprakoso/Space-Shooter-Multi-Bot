@@ -20,22 +20,23 @@
             touch-action: none;
             height: 100vh;
             height: 100dvh;
-            /* tinggi layar sebenarnya, tanpa terpotong url bar */
         }
 
-        /* Kontrol sentuh: hanya di layar sentuh mode landscape */
+        /* Kontrol sentuh: Tampil di device sentuh (hover:none / coarse) atau saat landscape */
         #touch-controls,
         #rotate-hint {
             display: none;
         }
 
-        @media (pointer: coarse) and (orientation: landscape) {
+        @media (pointer: coarse) and (orientation: landscape),
+        (hover: none) and (orientation: landscape) {
             #touch-controls {
                 display: block;
             }
         }
 
-        @media (pointer: coarse) and (orientation: portrait) {
+        @media (pointer: coarse) and (orientation: portrait),
+        (hover: none) and (orientation: portrait) {
             #rotate-hint {
                 display: flex;
             }
@@ -45,7 +46,7 @@
 
 <body class="bg-gray-950 w-screen relative font-mono">
 
-    <!-- HUD PLAYER 1 (POJOK KANAN ATAS) - tetap seperti semula -->
+    <!-- HUD PLAYER 1 (POJOK KANAN ATAS) -->
     <div class="fixed top-4 right-4 w-64 z-20 space-y-2">
         <div class="bg-gray-900/80 p-3 rounded-lg border border-gray-800 backdrop-blur space-y-2.5 shadow-lg">
             <p class="text-blue-400 font-bold text-xs uppercase border-b border-gray-800 pb-1">PLAYER 1 (BIRU)</p>
@@ -120,14 +121,12 @@
             BIRU</button>
     </div>
 
-    <!-- Pesawat & HUD bot dibuat dari play.js (class Ship) -->
     <!-- KONTROL SENTUH (landscape) -->
     <div id="touch-controls">
-        <!-- Joystick: arah stick = arah hadap pesawat, dorong stick = gas -->
         <div id="joy-base"
             class="fixed bottom-6 left-8 z-40 w-36 h-36 rounded-full border-2 border-white/30 bg-white/10 touch-none select-none">
             <div id="joy-knob"
-                class="absolute left-1/2 top-1/2 w-14 h-14 rounded-full bg-white/40 border border-white/60 pointer-events-none">
+                class="absolute left-1/2 top-1/2 w-14 h-14 rounded-full bg-white/40 border border-white/60 pointer-events-none -translate-x-1/2 -translate-y-1/2">
             </div>
         </div>
         <div class="fixed bottom-6 right-6 z-40 flex items-end gap-3">

@@ -9,7 +9,7 @@ const BULLET_DAMAGE = 15;      // damage peluru ke meteor
 const BULLET_LIFE = 100;       // umur peluru (frame) sebelum hilang
 const BULLET_MASS = 2;         // massa peluru (untuk dorongan momentum)
 const METEOR_MAX_SPEED = 5;
-const METEOR_TYPES = [         // r = radius, hp = durabilitas (kecil = 1 tembakan hancur)
+const METEOR_TYPES = [         // r = radius, hp = durabilitas
     { r: 8, hp: 15 },
     { r: 12, hp: 45 },
     { r: 18, hp: 90 },
@@ -21,7 +21,7 @@ const PICKUP_SEEK = 700;         // jarak bot mencari pickup (px)
 const HEAL_AMOUNT = 30;          // pickup health
 const MAG_AMOUNT = 1;            // pickup magazine
 const AVOID_METEOR = 80;   // jarak aman bot dari meteor (px)
-const AVOID_SHIP = 60;     // jarak aman bot dari pesawat lain (px, di luar badan)
+const AVOID_SHIP = 60;     // jarak aman bot dari pesawat lain (px)
 
 const TEAMS = {
     blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
@@ -45,7 +45,7 @@ const enemyCount = $('enemy-count'), allyCount = $('ally-count');
 
 // ================= STATE =================
 const keys = {};
-const joy = { active: false, dx: 0, dy: 0 };   // joystick virtual (dx, dy: -1..1, y ke atas)
+const joy = { active: false, dx: 0, dy: 0 };   // joystick virtual (dx, dy: -1..1)
 const ships = [];
 const bullets = [];
 const meteors = [];
@@ -53,9 +53,8 @@ const pickups = [];
 const cam = { x: 0, y: 0 };   // pojok kiri-bawah layar dalam koordinat dunia
 
 // ================= UTIL =================
-// Tulis ke DOM hanya jika nilainya berubah (hemat style recalculation)
-function setW(el, v) { if (el._w !== v) { el._w = v; el.style.width = v; } }
-function setTxt(el, v) { if (el._t !== v) { el._t = v; el.textContent = v; } }
+function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; } }
+function setTxt(el, v) { if (el && el._t !== v) { el._t = v; el.textContent = v; } }
 
 function resolveCollision(a, b, restitution = 0.75) {
     const dx = b.x - a.x, dy = b.y - a.y;
@@ -99,7 +98,6 @@ function createExplosion(cx, cy, count = 24) {
 }
 
 // ================= KOMPONEN: SHIP =================
-// Satu class untuk player & bot (merah/biru). x,y = titik tengah pesawat.
 class Ship {
     constructor(team, isPlayer = false) {
         this.team = team;
@@ -137,7 +135,6 @@ class Ship {
         el.querySelectorAll('[data-fx]').forEach(n => this.fxEls[n.dataset.fx] = n);
     }
 
-    // HUD bar melayang di atas pesawat (hanya bot)
     buildHud() {
         const hud = document.createElement('div');
         hud.className = 'fixed left-0 bottom-0 w-14 z-20 pointer-events-none';
@@ -164,7 +161,7 @@ class Ship {
             input: {}, fx: {},
         });
         this.el.classList.remove('hidden');
-        this.el.style.opacity = 1;
+        this.el.style.opacity = '1';
     }
 
     readKeys() {
@@ -177,19 +174,17 @@ class Ship {
             shoot: !!k.Space,
         };
 
-        // Joystick: arahkan pesawat ke arah stick, gas jika sudah searah
         if (joy.active && Math.hypot(joy.dx, joy.dy) > 0.25) {
             let diff = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI - this.angle;
             while (diff < -180) diff += 360;
             while (diff > 180) diff -= 360;
-            const pd = diff - this.vAngle * 10;   // prediksi putaran agar tidak overshoot
+            const pd = diff - this.vAngle * 10;
             if (pd < -4) this.input.left = true;
             else if (pd > 4) this.input.right = true;
             if (Math.abs(diff) < 50) this.input.thrust = true;
         }
     }
 
-    // Target = musuh (beda tim) terdekat
     nearestEnemy() {
         let best = null, bestD = Infinity;
         for (const s of ships) {
@@ -202,8 +197,6 @@ class Ship {
 
     ai() {
         const i = this.input = {};
-
-        // --- Menghindar: tolak dari meteor & batas layar (prioritas di atas menyerang) ---
         let ax = 0, ay = 0;
         for (const m of meteors) {
             const d = Math.hypot(this.x - m.x, this.y - m.y) || 0.01;
@@ -230,8 +223,8 @@ class Ship {
             while (fd < -180) fd += 360;
             while (fd > 180) fd -= 360;
             if (Math.abs(fd) > 6) { i.left = fd < 0; i.right = fd > 0; }
-            if (Math.abs(fd) < 70) i.thrust = true;       // menghadap arah kabur -> gas
-            else if (Math.abs(fd) > 110) i.reverse = true; // membelakangi -> mundur
+            if (Math.abs(fd) < 70) i.thrust = true;
+            else if (Math.abs(fd) > 110) i.reverse = true;
             return;
         }
 
@@ -281,8 +274,6 @@ class Ship {
         this.vx *= FRICTION; this.vy *= FRICTION;
         this.x += this.vx; this.y += this.vy;
 
-        // Magazine: peluru di magazine habis -> reload otomatis (pakai 1 magazine cadangan).
-        // Jika magazine cadangan juga habis, tidak bisa menembak sampai ambil pickup.
         if (this.reloadUntil && ts >= this.reloadUntil) {
             this.reloadUntil = 0; this.ammo = p.magSize; this.mags--;
         }
@@ -314,8 +305,8 @@ class Ship {
         if (this.hull <= 0) return this.destroy();
 
         this.invuln = true;
-        this.el.style.opacity = 0.4;
-        setTimeout(() => { this.el.style.opacity = 1; this.invuln = false; }, 800);
+        this.el.style.opacity = '0.4';
+        setTimeout(() => { if (this.el) this.el.style.opacity = '1'; this.invuln = false; }, 800);
     }
 
     destroy() {
@@ -330,9 +321,8 @@ class Ship {
         }
     }
 
-    // Hapus bot dari game (DOM + array)
     remove() {
-        this.el.remove();
+        if (this.el) this.el.remove();
         if (this.hud) this.hud.remove();
         const idx = ships.indexOf(this);
         if (idx >= 0) ships.splice(idx, 1);
@@ -345,7 +335,6 @@ class Ship {
         else this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
     }
 
-    // Bot mencari pickup terdekat yang dibutuhkan (hull < 60 atau magazine habis)
     seekPickup() {
         let best = null, bestD = PICKUP_SEEK;
         for (const k of pickups) {
@@ -358,7 +347,7 @@ class Ship {
     }
 
     render() {
-        this.el.style.transform = `translate(${this.x - W / 2 - cam.x}px, ${-(this.y - H / 2 - cam.y)}px) rotate(${this.angle}deg)`;
+        this.el.style.transform = `translate(${this.x - W / 2 - cam.x}px, ${-(this.y + H / 2 - cam.y)}px) rotate(${this.angle}deg)`;
         for (const k in this.fxEls) {
             const on = !!this.fx[k];
             if (this._fx[k] !== on) { this._fx[k] = on; this.fxEls[k].style.display = on ? '' : 'none'; }
@@ -373,7 +362,7 @@ class Ship {
             setW(rcsFuelBar, `${this.rcs}%`);
             setTxt(rcsFuelText, `${Math.round(this.rcs)}%`);
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
-            ammoBar.style.opacity = this.reloadUntil ? 0.4 : 1;
+            ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
             setTxt(ammoText, noAmmo ? 'NO AMMO'
                 : this.reloadUntil ? `RELOAD · MAG ${this.mags}`
                     : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`);
@@ -381,7 +370,7 @@ class Ship {
             this.hud.style.transform = `translate(${this.x - 28 - cam.x}px, ${-(this.y + H / 2 + 6 - cam.y)}px)`;
             setW(this.hudBar, `${this.hull}%`);
             setW(this.hudAmmo, `${(this.ammo / this.p.magSize) * 100}%`);
-            this.hudAmmo.style.opacity = this.reloadUntil ? 0.4 : 1;
+            this.hudAmmo.style.opacity = this.reloadUntil ? '0.4' : '1';
         }
     }
 }
@@ -452,15 +441,13 @@ function updateMeteors() {
         const m = meteors[i];
         m.x += m.vx; m.y += m.vy;
 
-        // Terlalu jauh dari kamera -> hapus
         if (Math.hypot(m.x - (cam.x + window.innerWidth / 2), m.y - (cam.y + window.innerHeight / 2)) > Math.hypot(window.innerWidth, window.innerHeight)) {
             m.el.remove(); meteors.splice(i, 1);
             continue;
         }
 
-        m.el.style.transform = `translate(${m.x - m.radius - cam.x}px, ${-(m.y - m.radius - cam.y)}px)`;
+        m.el.style.transform = `translate(${m.x - m.radius - cam.x}px, ${-(m.y + m.radius - cam.y)}px)`;
 
-        // Peluru vs meteor: kurangi HP + transfer momentum (meteor terdorong)
         let destroyed = false;
         for (let bi = bullets.length - 1; bi >= 0; bi--) {
             const b = bullets[bi];
@@ -481,9 +468,8 @@ function updateMeteors() {
             m.el.remove(); meteors.splice(i, 1);
             continue;
         }
-        m.el.style.opacity = 0.45 + 0.55 * (m.hp / m.maxHp); // makin rusak makin pudar
+        m.el.style.opacity = 0.45 + 0.55 * (m.hp / m.maxHp);
 
-        // Semua pesawat vs meteor
         for (const s of [...ships]) {
             if (s.dead) continue;
             const imp = resolveCollision(s, m, 0.7);
@@ -497,9 +483,8 @@ function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx; b.y += b.vy;
-        b.el.style.transform = `translate(${b.x - 4 - cam.x}px, ${-(b.y - 8 - cam.y)}px) rotate(${b.angle}deg)`;
+        b.el.style.transform = `translate(${b.x - 4 - cam.x}px, ${-(b.y + 8 - cam.y)}px) rotate(${b.angle}deg)`;
 
-        // Friendly fire aktif: kena siapa saja kecuali penembaknya sendiri
         const target = ships.find(s => !s.dead && s !== b.owner && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
         const out = --b.life <= 0;
 
@@ -510,7 +495,7 @@ function updateBullets() {
     }
 }
 
-// ================= PICKUP (HEALTH & MAGAZINE) =================
+// ================= PICKUP =================
 const PICKUP_TYPES = {
     health: { color: '#22c55e', icon: '<path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z" fill="#fff"/>' },
     mag: { color: '#eab308', icon: '<rect x="8" y="3" width="8" height="18" rx="1.5" fill="#fff"/><path d="M8 8h8M8 12h8M8 16h8" stroke="#a16207" stroke-width="1.5"/>' },
@@ -538,7 +523,7 @@ function updatePickups() {
 
     for (let i = pickups.length - 1; i >= 0; i--) {
         const k = pickups[i];
-        k.el.style.transform = `translate(${k.x - PICKUP_RADIUS - cam.x}px, ${-(k.y - PICKUP_RADIUS - cam.y)}px)`;
+        k.el.style.transform = `translate(${k.x - PICKUP_RADIUS - cam.x}px, ${-(k.y + PICKUP_RADIUS - cam.y)}px)`;
 
         if (Math.hypot(k.x - (cam.x + window.innerWidth / 2), k.y - (cam.y + window.innerHeight / 2)) > far) {
             k.el.remove(); pickups.splice(i, 1);
@@ -562,7 +547,6 @@ function gameLoop(ts) {
         s.step(ts);
     }
 
-    // Tabrakan antar pesawat
     const live = ships.filter(s => !s.dead);
     for (let i = 0; i < live.length; i++) {
         for (let j = i + 1; j < live.length; j++) {
@@ -586,11 +570,9 @@ function gameLoop(ts) {
 }
 
 // ================= KAMERA & LATAR =================
-// Dunia tak terbatas: kamera selalu memusatkan player (diam saat player mati)
-const SPECTATE_SPEED = 14;   // kecepatan geser kamera saat player mati (px/frame)
+const SPECTATE_SPEED = 14;
 function updateCamera() {
     if (player.dead) {
-        // Mode penonton: geser kamera dengan tombol arah / WASD
         if (keys.ArrowLeft || keys.KeyA) cam.x -= SPECTATE_SPEED;
         if (keys.ArrowRight || keys.KeyD) cam.x += SPECTATE_SPEED;
         if (keys.ArrowUp || keys.KeyW) cam.y += SPECTATE_SPEED;
@@ -602,7 +584,6 @@ function updateCamera() {
     cam.y = player.y - window.innerHeight / 2;
 }
 
-// Bintang & partikel digambar di canvas (jauh lebih ringan daripada repaint CSS / ratusan elemen DOM)
 function makeCanvas(z) {
     const c = document.createElement('canvas');
     c.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:${z}`;
@@ -653,7 +634,6 @@ function updateEffects() {
     drawEnemyArrows();
 }
 
-// Panah kecil di tepi layar menunjuk musuh yang berada di luar layar (+ jarak)
 function drawEnemyArrows() {
     const w = fxCanvas.width, h = fxCanvas.height, cx = w / 2, cy = h / 2, pad = 28;
     fxCtx.font = 'bold 10px monospace';
@@ -662,7 +642,7 @@ function drawEnemyArrows() {
     for (const s of ships) {
         if (s.dead || s.team === PLAYER_TEAM) continue;
         const sx = s.x - cam.x, sy = h - (s.y - cam.y);
-        if (sx > -20 && sx < w + 20 && sy > -20 && sy < h + 20) continue; // masih terlihat
+        if (sx > -20 && sx < w + 20 && sy > -20 && sy < h + 20) continue;
 
         const dx = sx - cx, dy = sy - cy;
         const t = Math.min((cx - pad) / Math.abs(dx || 0.001), (cy - pad) / Math.abs(dy || 0.001));
@@ -686,7 +666,6 @@ function drawEnemyArrows() {
 }
 
 // ================= INDIKATOR MUSUH / KAWAN =================
-// Kawan = bot satu tim dengan player (player tidak dihitung)
 let lastCounts = '';
 function updateCounts() {
     let enemy = 0, ally = 0;
@@ -701,73 +680,125 @@ function updateCounts() {
     allyCount.textContent = ally;
 }
 
-// ================= INPUT & START =================
+// ================= INPUT KEYBOARD =================
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') e.preventDefault();
     keys[e.code] = true;
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-// Kontrol sentuh: tombol on-screen mengisi `keys` yang sama dengan keyboard
-// (pointer events + capture -> multi-touch, mis. belok + gas + tembak bersamaan)
+// Kontrol Tombol On-Screen (REV & FIRE)
 document.querySelectorAll('[data-key]').forEach(btn => {
     const code = btn.dataset.key;
-    const set = (v) => (e) => { e.preventDefault(); keys[code] = v; btn.style.opacity = v ? 1 : 0.7; };
+    const set = (v) => (e) => { e.preventDefault(); keys[code] = v; btn.style.opacity = v ? '1' : '0.7'; };
     btn.addEventListener('pointerdown', (e) => { btn.setPointerCapture(e.pointerId); set(true)(e); });
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => btn.addEventListener(ev, set(false)));
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
-    btn.style.opacity = 0.7;
+    btn.style.opacity = '0.7';
 });
 
-// Joystick virtual (pointer events + capture, tidak mengganggu tombol lain)
+// ================= JOYSTICK VIRTUAL (NATIVE MULTI-TOUCH) =================
 const joyBase = $('joy-base'), joyKnob = $('joy-knob');
 const JOY_R = 54;
-let joyId = null;
+let joyTouchId = null;
+let joyCenter = { x: 0, y: 0 };
 
-function joyMove(e) {
-    const r = joyBase.getBoundingClientRect();
-    let x = e.clientX - (r.left + r.width / 2), y = e.clientY - (r.top + r.height / 2);
-    const d = Math.hypot(x, y);
-    if (d > JOY_R) { x = (x / d) * JOY_R; y = (y / d) * JOY_R; }
-    joy.dx = x / JOY_R; joy.dy = -y / JOY_R;
+function updateJoyPos(clientX, clientY) {
+    let x = clientX - joyCenter.x;
+    let y = clientY - joyCenter.y;
+    const dist = Math.hypot(x, y);
+
+    if (dist > JOY_R) {
+        x = (x / dist) * JOY_R;
+        y = (y / dist) * JOY_R;
+    }
+
+    joy.dx = x / JOY_R;
+    joy.dy = -y / JOY_R; // Y ke atas positif
     joyKnob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
 }
-function joyEnd(e) {
-    if (e && e.pointerId !== joyId) return;
-    joyId = null; joy.active = false; joy.dx = joy.dy = 0;
+
+function resetJoy() {
+    joyTouchId = null;
+    joy.active = false;
+    joy.dx = 0; joy.dy = 0;
     joyKnob.style.transform = 'translate(-50%, -50%)';
 }
-joyBase.addEventListener('pointerdown', (e) => {
-    if (joy.active) return;
-    e.preventDefault();
-    joyId = e.pointerId; joy.active = true;
-    joyBase.setPointerCapture(e.pointerId);
-    joyMove(e);
-});
-joyBase.addEventListener('pointermove', (e) => { if (joy.active && e.pointerId === joyId) joyMove(e); });
-['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => joyBase.addEventListener(ev, joyEnd));
-joyEnd();
 
-// Layar penuh (menyembunyikan url bar) + kunci landscape. iOS Safari tidak mendukung -> Add to Home Screen.
+// 1. Handling Layar Sentuh (Touch Events) - Sangat stabil untuk multi-touch
+if (joyBase) {
+    joyBase.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (joyTouchId !== null) return;
+        const touch = e.changedTouches[0];
+        joyTouchId = touch.identifier;
+        joy.active = true;
+
+        const rect = joyBase.getBoundingClientRect();
+        joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        updateJoyPos(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+        if (joyTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === joyTouchId) {
+                updateJoyPos(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                break;
+            }
+        }
+    }, { passive: false });
+
+    const endTouchHandler = (e) => {
+        if (joyTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === joyTouchId) {
+                resetJoy();
+                break;
+            }
+        }
+    };
+
+    window.addEventListener('touchend', endTouchHandler);
+    window.addEventListener('touchcancel', endTouchHandler);
+
+    // 2. Handling Mouse Fallback (untuk testing desktop via Klik Drag)
+    joyBase.addEventListener('mousedown', (e) => {
+        if (joy.active) return;
+        joy.active = true;
+        const rect = joyBase.getBoundingClientRect();
+        joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        updateJoyPos(e.clientX, e.clientY);
+
+        const onMouseMove = (me) => updateJoyPos(me.clientX, me.clientY);
+        const onMouseUp = () => {
+            resetJoy();
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    });
+}
+
+// Fullscreen
 const fsBtn = $('fs-btn');
 const canFullscreen = !!document.documentElement.requestFullscreen;
 async function goFullscreen() {
     try {
         if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
         if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
-    } catch (err) { /* ditolak browser: abaikan */ }
+    } catch (err) { /* ignore */ }
 }
-if (!canFullscreen) fsBtn.style.display = 'none';
-fsBtn.addEventListener('click', goFullscreen);
+if (!canFullscreen && fsBtn) fsBtn.style.display = 'none';
+if (fsBtn) fsBtn.addEventListener('click', goFullscreen);
 document.addEventListener('fullscreenchange', () => {
-    fsBtn.style.display = (!canFullscreen || document.fullscreenElement) ? 'none' : '';
+    if (fsBtn) fsBtn.style.display = (!canFullscreen || document.fullscreenElement) ? 'none' : '';
 });
-// Otomatis dicoba pada sentuhan pertama di perangkat sentuh
 if (canFullscreen && window.matchMedia('(pointer: coarse)').matches) {
     document.addEventListener('pointerup', goFullscreen, { once: true });
 }
 
-// blur() agar tombol Space (tembak) tidak ikut "menekan" tombol yang terfokus
 $('reset-btn').addEventListener('click', (e) => { resetGame(); e.currentTarget.blur(); });
 $('add-red').addEventListener('click', (e) => { spawnBot('red'); e.currentTarget.blur(); });
 $('add-blue').addEventListener('click', (e) => { spawnBot('blue'); e.currentTarget.blur(); });
