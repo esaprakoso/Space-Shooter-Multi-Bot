@@ -695,6 +695,17 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
+// Kontrol sentuh: tombol on-screen mengisi `keys` yang sama dengan keyboard
+// (pointer events + capture -> multi-touch, mis. belok + gas + tembak bersamaan)
+document.querySelectorAll('[data-key]').forEach(btn => {
+    const code = btn.dataset.key;
+    const set = (v) => (e) => { e.preventDefault(); keys[code] = v; btn.style.opacity = v ? 1 : 0.7; };
+    btn.addEventListener('pointerdown', (e) => { btn.setPointerCapture(e.pointerId); set(true)(e); });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => btn.addEventListener(ev, set(false)));
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+    btn.style.opacity = 0.7;
+});
+
 // blur() agar tombol Space (tembak) tidak ikut "menekan" tombol yang terfokus
 $('reset-btn').addEventListener('click', (e) => { resetGame(); e.currentTarget.blur(); });
 $('add-red').addEventListener('click', (e) => { spawnBot('red'); e.currentTarget.blur(); });
