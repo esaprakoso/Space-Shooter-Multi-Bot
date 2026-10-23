@@ -2,7 +2,7 @@
 const PLAYER_TEAM = 'blue';      // tim player
 const INITIAL_BOTS = ['red'];    // bot awal saat start / restart
 const W = 40, H = 48, RADIUS = 18, MASS = 25;
-const MAX_FUEL = 100, UNLOCK = 30, MAX_HULL = 100;
+const MAX_FUEL = 100, BOOST_MAX_FUEL = 160, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
 const MAX_METEORS = 10;
 const BULLET_DAMAGE = 15;      // damage peluru ke meteor
@@ -20,6 +20,7 @@ const PICKUP_RADIUS = 14;
 const PICKUP_SEEK = 700;         // jarak bot mencari pickup (px)
 const HEAL_AMOUNT = 30;          // pickup health
 const MAG_AMOUNT = 1;            // pickup magazine
+const BOOST_DURATION = 10000;    // durasi boost temporary (10 detik)
 const AVOID_METEOR = 80;   // jarak aman bot dari meteor (px)
 const AVOID_SHIP = 60;     // jarak aman bot dari pesawat lain (px)
 
@@ -57,6 +58,7 @@ function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; }
 function setTxt(el, v) { if (el && el._t !== v) { el._t = v; el.textContent = v; } }
 
 function resolveCollision(a, b, restitution = 0.75) {
+    if (!a || !b) return 0;
     const dx = b.x - a.x, dy = b.y - a.y;
     const dist = Math.hypot(dx, dy);
     const minDist = a.radius + b.radius;
@@ -84,7 +86,7 @@ function resolveCollision(a, b, restitution = 0.75) {
 
 const particles = [];
 const MAX_PARTICLES = 400;
-const PARTICLE_COLORS = ['#f97316', '#ef4444', '#eab308', '#38bdf8', '#ffffff'];
+const PARTICLE_COLORS = ['#f97316', '#ef4444', '#eab308', '#38bdf8', '#a855f7', '#ffffff'];
 
 function createExplosion(cx, cy, count = 24) {
     for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
@@ -157,11 +159,13 @@ class Ship {
             hull: MAX_HULL, main: MAX_FUEL, rcs: MAX_FUEL,
             mainEmpty: false, rcsEmpty: false,
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
-            dead: false, invuln: false, lastShot: 0,
+            dead: false, invuln: false, lastShot: 0, boostUntil: 0,
             input: {}, fx: {},
         });
-        this.el.classList.remove('hidden');
-        this.el.style.opacity = '1';
+        if (this.el) {
+            this.el.classList.remove('hidden');
+            this.el.style.opacity = '1';
+        }
     }
 
     readKeys() {
@@ -248,6 +252,9 @@ class Ship {
     step(ts) {
         const p = this.p, i = this.input;
 
+        const isBoosted = !!(this.boostUntil && performance.now() < this.boostUntil);
+        const maxLimit = isBoosted ? BOOST_MAX_FUEL : MAX_FUEL;
+
         if (this.rcs <= 0) this.rcsEmpty = true;
         else if (this.rcsEmpty && this.rcs >= UNLOCK) this.rcsEmpty = false;
         if (this.main <= 0) this.mainEmpty = true;
@@ -265,8 +272,8 @@ class Ship {
         if (thrust) { this.vx += p.main * Math.sin(rad); this.vy += p.main * Math.cos(rad); }
 
         const rcsUsed = left || right || rev;
-        this.rcs = rcsUsed ? Math.max(0, this.rcs - p.rcsUse) : Math.min(MAX_FUEL, this.rcs + 0.3);
-        this.main = thrust ? Math.max(0, this.main - p.mainUse) : Math.min(MAX_FUEL, this.main + p.mainRegen);
+        this.rcs = rcsUsed ? Math.max(0, this.rcs - p.rcsUse) : Math.min(maxLimit, this.rcs + 0.3);
+        this.main = thrust ? Math.max(0, this.main - p.mainUse) : Math.min(maxLimit, this.main + p.mainRegen);
         this.fx = { left, right, rev, thrust };
 
         this.vAngle *= ANG_FRICTION;
@@ -286,7 +293,6 @@ class Ship {
         }
     }
 
-    // Tembak dari moncong depan pesawat (noseOffset = 16px)
     shoot() {
         const rad = (this.angle * Math.PI) / 180;
         const noseOffset = 16;
@@ -310,7 +316,7 @@ class Ship {
         if (this.hull <= 0) return this.destroy();
 
         this.invuln = true;
-        this.el.style.opacity = '0.4';
+        if (this.el) this.el.style.opacity = '0.4';
         setTimeout(() => { if (this.el) this.el.style.opacity = '1'; this.invuln = false; }, 800);
     }
 
@@ -318,7 +324,7 @@ class Ship {
         this.dead = true;
         createExplosion(this.x, this.y, 36);
         if (this.isPlayer) {
-            this.el.classList.add('hidden');
+            if (this.el) this.el.classList.add('hidden');
             showStatus('YOU LOST! GESER: ARAH / WASD', 'text-red-500');
         } else {
             this.remove();
@@ -333,17 +339,29 @@ class Ship {
         if (idx >= 0) ships.splice(idx, 1);
     }
 
-    canUse(type) { return type === 'health' ? this.hull < MAX_HULL : this.mags < this.p.maxMags; }
+    canUse(type) {
+        if (type === 'health') return this.hull < MAX_HULL;
+        if (type === 'mag') return this.mags < this.p.maxMags;
+        if (type === 'boost') return !this.boostUntil || performance.now() > this.boostUntil;
+        return true;
+    }
 
     apply(type) {
         if (type === 'health') this.hull = Math.min(MAX_HULL, this.hull + HEAL_AMOUNT);
-        else this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
+        else if (type === 'mag') this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
+        else if (type === 'boost') {
+            this.boostUntil = performance.now() + BOOST_DURATION;
+            this.main = BOOST_MAX_FUEL;
+            this.rcs = BOOST_MAX_FUEL;
+            createExplosion(this.x, this.y, 16);
+        }
     }
 
     seekPickup() {
         let best = null, bestD = PICKUP_SEEK;
         for (const k of pickups) {
-            const need = k.type === 'health' ? this.hull < 60 : this.mags < 1;
+            const isBoosted = !!(this.boostUntil && performance.now() < this.boostUntil);
+            const need = k.type === 'health' ? this.hull < 60 : k.type === 'mag' ? this.mags < 1 : !isBoosted;
             if (!need) continue;
             const d = Math.hypot(k.x - this.x, k.y - this.y);
             if (d < bestD) { bestD = d; best = k; }
@@ -355,32 +373,40 @@ class Ship {
         const sx = this.x - cam.x;
         const sy = window.innerHeight - (this.y - cam.y);
 
-        this.el.style.transform = `translate(${sx - W / 2}px, ${sy - H / 2}px) rotate(${this.angle}deg)`;
+        if (this.el) this.el.style.transform = `translate(${sx - W / 2}px, ${sy - H / 2}px) rotate(${this.angle}deg)`;
         for (const k in this.fxEls) {
             const on = !!this.fx[k];
-            if (this._fx[k] !== on) { this._fx[k] = on; this.fxEls[k].style.display = on ? '' : 'none'; }
+            if (this._fx[k] !== on) { this._fx[k] = on; if (this.fxEls[k]) this.fxEls[k].style.display = on ? '' : 'none'; }
         }
 
         if (this.isPlayer) {
+            const isBoosted = !!(this.boostUntil && performance.now() < this.boostUntil);
+            const maxLimit = isBoosted ? BOOST_MAX_FUEL : MAX_FUEL;
+
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
             const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
 
-            setW(hullBar, `${this.hull}%`);
+            setW(hullBar, `${(this.hull / MAX_HULL) * 100}%`);
             setTxt(hullText, `${Math.round(this.hull)}%`);
-            setW(mainFuelBar, `${this.main}%`);
-            setTxt(mainFuelText, `${Math.round(this.main)}%`);
-            setW(rcsFuelBar, `${this.rcs}%`);
-            setTxt(rcsFuelText, `${Math.round(this.rcs)}%`);
+
+            setW(mainFuelBar, `${(this.main / maxLimit) * 100}%`);
+            setTxt(mainFuelText, `${Math.round(this.main)}%${isBoosted ? ' [BOOST]' : ''}`);
+            if (mainFuelBar) mainFuelBar.style.background = isBoosted ? '#a855f7' : '';
+
+            setW(rcsFuelBar, `${(this.rcs / maxLimit) * 100}%`);
+            setTxt(rcsFuelText, `${Math.round(this.rcs)}%${isBoosted ? ' [BOOST]' : ''}`);
+            if (rcsFuelBar) rcsFuelBar.style.background = isBoosted ? '#a855f7' : '';
+
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
-            ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
+            if (ammoBar) ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
             setTxt(ammoText, ammoTxt);
 
-            setTxt($('hud-status-mini'), `${Math.round(this.hull)}% HP · ${ammoTxt}`);
-        } else {
+            setTxt($('hud-status-mini'), `${Math.round(this.hull)}% HP · ${ammoTxt}${isBoosted ? ' · [BOOST]' : ''}`);
+        } else if (this.hud) {
             this.hud.style.transform = `translate(${sx - 28}px, ${sy - H / 2 - 16}px)`;
             setW(this.hudBar, `${this.hull}%`);
             setW(this.hudAmmo, `${(this.ammo / this.p.magSize) * 100}%`);
-            this.hudAmmo.style.opacity = this.reloadUntil ? '0.4' : '1';
+            if (this.hudAmmo) this.hudAmmo.style.opacity = this.reloadUntil ? '0.4' : '1';
         }
     }
 }
@@ -390,8 +416,8 @@ const player = new Ship(PLAYER_TEAM, true);
 ships.push(player);
 
 function showStatus(text, colorClass) {
-    statusTitle.innerHTML = `<span class="${colorClass}">${text}</span>`;
-    gameOverBox.classList.remove('hidden');
+    if (statusTitle) statusTitle.innerHTML = `<span class="${colorClass}">${text}</span>`;
+    if (gameOverBox) gameOverBox.classList.remove('hidden');
 }
 
 function checkVictory() {
@@ -405,7 +431,7 @@ function spawnBot(team) {
     const bot = new Ship(team);
     bot.reset(cam.x + window.innerWidth * rx, cam.y + window.innerHeight * (0.15 + Math.random() * 0.7), team === 'red' ? 90 : -90);
     ships.push(bot);
-    if (!player.dead) gameOverBox.classList.add('hidden');
+    if (!player.dead && gameOverBox) gameOverBox.classList.add('hidden');
 }
 
 function resetGame() {
@@ -413,11 +439,11 @@ function resetGame() {
     player.reset(0, 0, 0); updateCamera();
 
     Object.keys(keys).forEach(k => keys[k] = false);
-    bullets.forEach(b => b.el.remove()); bullets.length = 0;
-    meteors.forEach(m => m.el.remove()); meteors.length = 0;
-    pickups.forEach(k => k.el.remove()); pickups.length = 0;
+    bullets.forEach(b => { if (b.el) b.el.remove(); }); bullets.length = 0;
+    meteors.forEach(m => { if (m.el) m.el.remove(); }); meteors.length = 0;
+    pickups.forEach(k => { if (k.el) k.el.remove(); }); pickups.length = 0;
 
-    gameOverBox.classList.add('hidden');
+    if (gameOverBox) gameOverBox.classList.add('hidden');
     INITIAL_BOTS.forEach(spawnBot);
 }
 
@@ -452,13 +478,13 @@ function updateMeteors() {
         m.x += m.vx; m.y += m.vy;
 
         if (Math.hypot(m.x - (cam.x + window.innerWidth / 2), m.y - (cam.y + window.innerHeight / 2)) > Math.hypot(window.innerWidth, window.innerHeight)) {
-            m.el.remove(); meteors.splice(i, 1);
+            if (m.el) m.el.remove(); meteors.splice(i, 1);
             continue;
         }
 
         const sx = m.x - cam.x;
         const sy = window.innerHeight - (m.y - cam.y);
-        m.el.style.transform = `translate(${sx - m.radius}px, ${sy - m.radius}px)`;
+        if (m.el) m.el.style.transform = `translate(${sx - m.radius}px, ${sy - m.radius}px)`;
 
         let destroyed = false;
         for (let bi = bullets.length - 1; bi >= 0; bi--) {
@@ -472,15 +498,15 @@ function updateMeteors() {
 
             m.hp -= BULLET_DAMAGE;
             createExplosion(b.x, b.y, 3);
-            b.el.remove(); bullets.splice(bi, 1);
+            if (b.el) b.el.remove(); bullets.splice(bi, 1);
             if (m.hp <= 0) { destroyed = true; break; }
         }
         if (destroyed) {
             createExplosion(m.x, m.y, 12 + m.radius);
-            m.el.remove(); meteors.splice(i, 1);
+            if (m.el) m.el.remove(); meteors.splice(i, 1);
             continue;
         }
-        m.el.style.opacity = 0.45 + 0.55 * (m.hp / m.maxHp);
+        if (m.el) m.el.style.opacity = 0.45 + 0.55 * (m.hp / m.maxHp);
 
         for (const s of [...ships]) {
             if (s.dead) continue;
@@ -498,13 +524,13 @@ function updateBullets() {
 
         const sx = b.x - cam.x;
         const sy = window.innerHeight - (b.y - cam.y);
-        b.el.style.transform = `translate(${sx - 4}px, ${sy - 8}px) rotate(${b.angle}deg)`;
+        if (b.el) b.el.style.transform = `translate(${sx - 4}px, ${sy - 8}px) rotate(${b.angle}deg)`;
 
         const target = ships.find(s => !s.dead && s !== b.owner && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
         const out = --b.life <= 0;
 
         if (target || out) {
-            b.el.remove(); bullets.splice(i, 1);
+            if (b.el) b.el.remove(); bullets.splice(i, 1);
             if (target) target.takeDamage(15);
         }
     }
@@ -514,11 +540,13 @@ function updateBullets() {
 const PICKUP_TYPES = {
     health: { color: '#22c55e', icon: '<path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z" fill="#fff"/>' },
     mag: { color: '#eab308', icon: '<rect x="8" y="3" width="8" height="18" rx="1.5" fill="#fff"/><path d="M8 8h8M8 12h8M8 16h8" stroke="#a16207" stroke-width="1.5"/>' },
+    boost: { color: '#a855f7', icon: '<path d="M13 2L3 14h7v8l10-12h-7z" fill="#fff"/>' },
 };
 
 function spawnPickup() {
     if (pickups.length >= PICKUP_MAX) return;
-    const type = Math.random() < 0.5 ? 'health' : 'mag';
+    const types = ['health', 'mag', 'boost'];
+    const type = types[Math.floor(Math.random() * types.length)];
     const c = PICKUP_TYPES[type];
     const el = document.createElement('div');
     el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;will-change:transform;width:${PICKUP_RADIUS * 2}px;height:${PICKUP_RADIUS * 2}px`;
@@ -540,16 +568,16 @@ function updatePickups() {
         const k = pickups[i];
         const sx = k.x - cam.x;
         const sy = window.innerHeight - (k.y - cam.y);
-        k.el.style.transform = `translate(${sx - PICKUP_RADIUS}px, ${sy - PICKUP_RADIUS}px)`;
+        if (k.el) k.el.style.transform = `translate(${sx - PICKUP_RADIUS}px, ${sy - PICKUP_RADIUS}px)`;
 
         if (Math.hypot(k.x - (cam.x + window.innerWidth / 2), k.y - (cam.y + window.innerHeight / 2)) > far) {
-            k.el.remove(); pickups.splice(i, 1);
+            if (k.el) k.el.remove(); pickups.splice(i, 1);
             continue;
         }
         const taker = ships.find(s => !s.dead && s.canUse(k.type) && Math.hypot(s.x - k.x, s.y - k.y) < s.radius + PICKUP_RADIUS);
         if (taker) {
             taker.apply(k.type);
-            k.el.remove(); pickups.splice(i, 1);
+            if (k.el) k.el.remove(); pickups.splice(i, 1);
         }
     }
 }
@@ -693,8 +721,8 @@ function updateCounts() {
     const key = `${enemy},${ally}`;
     if (key === lastCounts) return;
     lastCounts = key;
-    enemyCount.textContent = enemy;
-    allyCount.textContent = ally;
+    if (enemyCount) enemyCount.textContent = enemy;
+    if (allyCount) allyCount.textContent = ally;
 }
 
 // ================= INPUT KEYBOARD =================
@@ -832,10 +860,14 @@ if (canFullscreen && window.matchMedia('(pointer: coarse)').matches) {
     document.addEventListener('pointerup', goFullscreen, { once: true });
 }
 
-$('reset-btn').addEventListener('click', (e) => { resetGame(); e.currentTarget.blur(); });
-$('add-red').addEventListener('click', (e) => { spawnBot('red'); e.currentTarget.blur(); });
-$('add-blue').addEventListener('click', (e) => { spawnBot('blue'); e.currentTarget.blur(); });
+const resetBtn = $('reset-btn');
+if (resetBtn) resetBtn.addEventListener('click', (e) => { resetGame(); e.currentTarget.blur(); });
+const addRedBtn = $('add-red');
+if (addRedBtn) addRedBtn.addEventListener('click', (e) => { spawnBot('red'); e.currentTarget.blur(); });
+const addBlueBtn = $('add-blue');
+if (addBlueBtn) addBlueBtn.addEventListener('click', (e) => { spawnBot('blue'); e.currentTarget.blur(); });
 
 player.reset(0, 0, 0); updateCamera();
 INITIAL_BOTS.forEach(spawnBot);
 requestAnimationFrame(gameLoop);
+

@@ -27,15 +27,13 @@
             display: none;
         }
 
-        @media (pointer: coarse) and (orientation: landscape),
-        (hover: none) and (orientation: landscape) {
+        @media (pointer: coarse) and (orientation: landscape), (hover: none) and (orientation: landscape) {
             #touch-controls {
                 display: block;
             }
         }
 
-        @media (pointer: coarse) and (orientation: portrait),
-        (hover: none) and (orientation: portrait) {
+        @media (pointer: coarse) and (orientation: portrait), (hover: none) and (orientation: portrait) {
             #rotate-hint {
                 display: flex;
             }
@@ -48,17 +46,16 @@
     <!-- HUD PLAYER 1 (POJOK KANAN ATAS) -->
     <div class="fixed top-3 right-3 w-48 sm:w-60 z-20 space-y-2">
         <div id="hud-panel" class="bg-gray-900/90 p-2.5 rounded-lg border border-gray-800 backdrop-blur shadow-lg">
-            <!-- Mini Bar Header (Selalu Terlihat, Bisa Diklik) -->
+            <!-- Mini Bar Header -->
             <div id="hud-toggle" class="flex justify-between items-center cursor-pointer select-none">
                 <div class="overflow-hidden">
                     <p class="text-blue-400 font-bold text-[11px] uppercase tracking-wide">PLAYER 1 (BIRU)</p>
-                    <p id="hud-status-mini" class="text-[10px] text-green-400 font-semibold truncate">100% HP · 20/20
-                    </p>
+                    <p id="hud-status-mini" class="text-[10px] text-green-400 font-semibold truncate">100% HP · 20/20</p>
                 </div>
                 <span id="hud-arrow" class="text-xs text-gray-400 ml-1 transition-transform duration-200">▼</span>
             </div>
 
-            <!-- Detail HUD (Tertutup Secara Default, Buka Saat Mini Bar Diklik) -->
+            <!-- Detail HUD -->
             <div id="hud-details" class="hidden space-y-2 pt-2.5 mt-2 border-t border-gray-800/80">
                 <div>
                     <div class="flex justify-between text-[10px] font-bold mb-1">
@@ -125,27 +122,33 @@
     <!-- TOMBOL TAMBAH BOT -->
     <div class="fixed top-3 left-3 z-20 flex gap-1.5">
         <button id="add-red"
-            class="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] sm:text-xs rounded cursor-pointer">+
-            BOT MERAH</button>
+            class="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] sm:text-xs rounded cursor-pointer">+ BOT MERAH</button>
         <button id="add-blue"
-            class="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] sm:text-xs rounded cursor-pointer">+
-            BOT BIRU</button>
+            class="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] sm:text-xs rounded cursor-pointer">+ BOT BIRU</button>
     </div>
 
     <!-- KONTROL SENTUH (landscape) -->
     <div id="touch-controls">
+        <!-- Joystick di Kiri -->
         <div id="joy-base"
-            class="fixed bottom-6 left-8 z-40 w-36 h-36 rounded-full border-2 border-white/30 bg-white/10 touch-none select-none">
+            class="fixed bottom-6 left-6 z-40 w-36 h-36 rounded-full border-2 border-white/30 bg-white/10 touch-none select-none">
             <div id="joy-knob"
                 class="absolute left-1/2 top-1/2 w-14 h-14 -ml-7 -mt-7 rounded-full bg-white/40 border border-white/60 pointer-events-none">
             </div>
         </div>
-        <div class="fixed bottom-6 right-6 z-40 flex items-end gap-3">
+
+        <!-- Tombol REV di Kiri (Sebelah Joystick) -->
+        <div class="fixed bottom-6 left-48 z-40">
             <button data-key="ArrowDown"
                 class="touch-none select-none rounded-full border border-white/30 bg-white/10 text-white font-bold flex items-center justify-center w-14 h-14 text-xs">REV</button>
+        </div>
+
+        <!-- Tombol FIRE di Kanan -->
+        <div class="fixed bottom-6 right-6 z-40">
             <button data-key="Space"
                 class="touch-none select-none rounded-full border border-white/30 bg-white/10 text-white font-bold flex items-center justify-center w-24 h-24 text-sm bg-red-600/30 border-red-400/50">FIRE</button>
         </div>
+
         <button id="fs-btn"
             class="fixed bottom-2 left-1/2 -translate-x-1/2 z-40 px-3 py-1 text-[10px] font-bold text-white/70 rounded-full border border-white/20 bg-white/10">⛶
             LAYAR PENUH</button>
@@ -162,3 +165,4 @@
 </body>
 
 </html>
+
