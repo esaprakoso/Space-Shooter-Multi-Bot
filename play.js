@@ -41,6 +41,7 @@ const hullBar = $('hull-bar'), hullText = $('hull-text');
 const mainFuelBar = $('main-fuel-bar'), mainFuelText = $('main-fuel-text');
 const rcsFuelBar = $('rcs-fuel-bar'), rcsFuelText = $('rcs-fuel-text');
 const ammoBar = $('ammo-bar'), ammoText = $('ammo-text');
+const enemyCount = $('enemy-count'), allyCount = $('ally-count');
 
 // ================= STATE =================
 const keys = {};
@@ -51,6 +52,10 @@ const pickups = [];
 const cam = { x: 0, y: 0 };   // pojok kiri-bawah layar dalam koordinat dunia
 
 // ================= UTIL =================
+// Tulis ke DOM hanya jika nilainya berubah (hemat style recalculation)
+function setW(el, v) { if (el._w !== v) { el._w = v; el.style.width = v; } }
+function setTxt(el, v) { if (el._t !== v) { el._t = v; el.textContent = v; } }
+
 function resolveCollision(a, b, restitution = 0.75) {
     const dx = b.x - a.x, dy = b.y - a.y;
     const dist = Math.hypot(dx, dy);
@@ -77,24 +82,18 @@ function resolveCollision(a, b, restitution = 0.75) {
     return Math.abs(impulse);
 }
 
-function createExplosion(cx, cy, count = 24) {
-    const colors = ['#f97316', '#ef4444', '#eab308', '#38bdf8', '#ffffff'];
-    for (let i = 0; i < count; i++) {
-        const p = document.createElement('div');
-        p.className = 'fixed left-0 bottom-0 rounded-full pointer-events-none z-30';
-        const size = Math.random() * 5 + 2;
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        p.style.cssText = `width:${size}px;height:${size}px;background:${color};box-shadow:0 0 8px ${color}`;
-        document.body.appendChild(p);
+const particles = [];
+const MAX_PARTICLES = 400;
+const PARTICLE_COLORS = ['#f97316', '#ef4444', '#eab308', '#38bdf8', '#ffffff'];
 
-        const a = Math.random() * Math.PI * 2, s = Math.random() * 7 + 2;
-        let px = cx, py = cy, op = 1;
-        (function anim() {
-            px += Math.cos(a) * s; py += Math.sin(a) * s; op -= 0.035;
-            p.style.transform = `translate(${px - cam.x}px, ${-(py - cam.y)}px)`;
-            p.style.opacity = op;
-            if (op > 0) requestAnimationFrame(anim); else p.remove();
-        })();
+function createExplosion(cx, cy, count = 24) {
+    for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
+        const a = Math.random() * Math.PI * 2, sp = Math.random() * 7 + 2;
+        particles.push({
+            x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+            size: Math.random() * 5 + 2, op: 1,
+            color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
+        });
     }
 }
 
@@ -116,13 +115,14 @@ class Ship {
         const c = this.c;
         const el = document.createElement('div');
         el.className = 'fixed left-0 bottom-0 w-10 h-12 pointer-events-none z-10';
+        el.style.willChange = 'transform';
         el.innerHTML = `
         <svg viewBox="-8 -6 40 42" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
              style="filter:drop-shadow(0 0 8px rgba(${c.glow},0.8))">
-            <path data-fx="thrust" d="M9 28L12 38L15 28Z" fill="#F97316" class="hidden"/>
-            <path data-fx="left" d="M1 22L-5 24L1 26Z" fill="${c.rcs}" class="hidden"/>
-            <path data-fx="right" d="M23 22L29 24L23 26Z" fill="${c.rcs}" class="hidden"/>
-            <g data-fx="rev" class="hidden">
+            <path data-fx="thrust" d="M9 28L12 38L15 28Z" fill="#F97316" style="display:none"/>
+            <path data-fx="left" d="M1 22L-5 24L1 26Z" fill="${c.rcs}" style="display:none"/>
+            <path data-fx="right" d="M23 22L29 24L23 26Z" fill="${c.rcs}" style="display:none"/>
+            <g data-fx="rev" style="display:none">
                 <path d="M4 12L-1 6L6 9Z" fill="${c.rcs}"/>
                 <path d="M20 12L25 6L18 9Z" fill="${c.rcs}"/>
             </g>
@@ -132,6 +132,7 @@ class Ship {
         document.body.appendChild(el);
         this.el = el;
         this.fxEls = {};
+        this._fx = {};
         el.querySelectorAll('[data-fx]').forEach(n => this.fxEls[n.dataset.fx] = n);
     }
 
@@ -285,8 +286,7 @@ class Ship {
     shoot() {
         const rad = (this.angle * Math.PI) / 180;
         const el = document.createElement('div');
-        el.className = 'fixed left-0 bottom-0 rounded-full pointer-events-none z-10';
-        el.style.cssText = `width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 10px ${this.c.bullet}`;
+        el.style.cssText = `position:fixed;left:0;bottom:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
         document.body.appendChild(el);
         bullets.push({
             el, owner: this, angle: this.angle, life: BULLET_LIFE,
@@ -347,25 +347,28 @@ class Ship {
 
     render() {
         this.el.style.transform = `translate(${this.x - W / 2 - cam.x}px, ${-(this.y - H / 2 - cam.y)}px) rotate(${this.angle}deg)`;
-        for (const k in this.fxEls) this.fxEls[k].classList.toggle('hidden', !this.fx[k === 'rev' ? 'rev' : k]);
+        for (const k in this.fxEls) {
+            const on = !!this.fx[k];
+            if (this._fx[k] !== on) { this._fx[k] = on; this.fxEls[k].style.display = on ? '' : 'none'; }
+        }
 
         if (this.isPlayer) {
-            hullBar.style.width = `${this.hull}%`;
-            hullText.textContent = `${Math.round(this.hull)}%`;
-            mainFuelBar.style.width = `${this.main}%`;
-            mainFuelText.textContent = `${Math.round(this.main)}%`;
-            rcsFuelBar.style.width = `${this.rcs}%`;
-            rcsFuelText.textContent = `${Math.round(this.rcs)}%`;
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
-            ammoBar.style.width = `${(this.ammo / this.p.magSize) * 100}%`;
+            setW(hullBar, `${this.hull}%`);
+            setTxt(hullText, `${Math.round(this.hull)}%`);
+            setW(mainFuelBar, `${this.main}%`);
+            setTxt(mainFuelText, `${Math.round(this.main)}%`);
+            setW(rcsFuelBar, `${this.rcs}%`);
+            setTxt(rcsFuelText, `${Math.round(this.rcs)}%`);
+            setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
             ammoBar.style.opacity = this.reloadUntil ? 0.4 : 1;
-            ammoText.textContent = noAmmo ? 'NO AMMO'
+            setTxt(ammoText, noAmmo ? 'NO AMMO'
                 : this.reloadUntil ? `RELOAD · MAG ${this.mags}`
-                    : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
+                    : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`);
         } else {
             this.hud.style.transform = `translate(${this.x - 28 - cam.x}px, ${-(this.y + H / 2 + 6 - cam.y)}px)`;
-            this.hudBar.style.width = `${this.hull}%`;
-            this.hudAmmo.style.width = `${(this.ammo / this.p.magSize) * 100}%`;
+            setW(this.hudBar, `${this.hull}%`);
+            setW(this.hudAmmo, `${(this.ammo / this.p.magSize) * 100}%`);
             this.hudAmmo.style.opacity = this.reloadUntil ? 0.4 : 1;
         }
     }
@@ -419,8 +422,7 @@ function spawnMeteor() {
     const sd = Math.hypot(window.innerWidth, window.innerHeight) / 2 + 40 + Math.random() * 150;
 
     const el = document.createElement('div');
-    el.className = 'fixed left-0 bottom-0 rounded-full border border-stone-400 bg-stone-700/90 pointer-events-none z-10 shadow-[0_0_4px_rgba(168,162,158,0.5)]';
-    el.style.width = el.style.height = `${radius * 2}px`;
+    el.style.cssText = `position:fixed;left:0;bottom:0;pointer-events:none;z-index:10;border-radius:9999px;box-sizing:border-box;border:1px solid #a8a29e;background:rgba(68,64,60,.9);will-change:transform;width:${radius * 2}px;height:${radius * 2}px`;
     document.body.appendChild(el);
 
     meteors.push({
@@ -508,10 +510,9 @@ function spawnPickup() {
     const type = Math.random() < 0.5 ? 'health' : 'mag';
     const c = PICKUP_TYPES[type];
     const el = document.createElement('div');
-    el.className = 'fixed left-0 bottom-0 pointer-events-none z-10';
-    el.style.width = el.style.height = `${PICKUP_RADIUS * 2}px`;
-    el.innerHTML = `<svg viewBox="0 0 24 24" class="w-full h-full animate-pulse" style="filter:drop-shadow(0 0 6px ${c.color})">
-        <rect x="1" y="1" width="22" height="22" rx="5" fill="${c.color}"/>${c.icon}</svg>`;
+    el.style.cssText = `position:fixed;left:0;bottom:0;pointer-events:none;z-index:10;will-change:transform;width:${PICKUP_RADIUS * 2}px;height:${PICKUP_RADIUS * 2}px`;
+    el.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%">
+        <rect x="1" y="1" width="22" height="22" rx="5" fill="${c.color}" stroke="#fff" stroke-opacity=".7"/>${c.icon}</svg>`;
     document.body.appendChild(el);
     pickups.push({
         el, type,
@@ -568,6 +569,8 @@ function gameLoop(ts) {
     updateBullets();
     updateMeteors();
     ships.forEach(s => s.render());
+    updateEffects();
+    updateCounts();
     requestAnimationFrame(gameLoop);
 }
 
@@ -579,20 +582,70 @@ function updateCamera() {
     cam.y = player.y - window.innerHeight / 2;
 }
 
-// Bintang berlapis (parallax) supaya gerakan terasa di ruang kosong
-const bg = document.createElement('div');
-bg.className = 'fixed inset-0 z-0 pointer-events-none';
-bg.style.backgroundImage = [
-    'radial-gradient(1px 1px at 30px 40px, rgba(255,255,255,.5) 50%, transparent)',
-    'radial-gradient(1.5px 1.5px at 120px 90px, rgba(255,255,255,.7) 50%, transparent)',
-    'radial-gradient(2px 2px at 70px 150px, rgba(255,255,255,.9) 50%, transparent)',
-].join(',');
-bg.style.backgroundSize = '170px 190px, 230px 210px, 310px 270px';
-document.body.prepend(bg);
+// Bintang & partikel digambar di canvas (jauh lebih ringan daripada repaint CSS / ratusan elemen DOM)
+function makeCanvas(z) {
+    const c = document.createElement('canvas');
+    c.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:${z}`;
+    document.body.appendChild(c);
+    return c;
+}
+const bgCanvas = makeCanvas(0), fxCanvas = makeCanvas(30);
+const bgCtx = bgCanvas.getContext('2d'), fxCtx = fxCanvas.getContext('2d');
+function resizeCanvases() {
+    for (const c of [bgCanvas, fxCanvas]) { c.width = window.innerWidth; c.height = window.innerHeight; }
+}
+window.addEventListener('resize', resizeCanvases);
+resizeCanvases();
+
+const STAR_TILE = 1200;
+const STAR_LAYERS = [{ k: 0.2, size: 1, a: 0.5 }, { k: 0.4, size: 1.5, a: 0.7 }, { k: 0.7, size: 2, a: 0.9 }];
+const stars = Array.from({ length: 140 }, () => ({
+    x: Math.random() * STAR_TILE, y: Math.random() * STAR_TILE,
+    L: STAR_LAYERS[Math.floor(Math.random() * STAR_LAYERS.length)],
+}));
 
 function updateBackground() {
-    const f = [0.2, 0.4, 0.7];
-    bg.style.backgroundPosition = f.map(k => `${-cam.x * k}px ${cam.y * k}px`).join(',');
+    const w = bgCanvas.width, h = bgCanvas.height;
+    bgCtx.clearRect(0, 0, w, h);
+    bgCtx.fillStyle = '#fff';
+    for (const s of stars) {
+        const sx = (((s.x - cam.x * s.L.k) % STAR_TILE) + STAR_TILE) % STAR_TILE;
+        const sy = (((s.y + cam.y * s.L.k) % STAR_TILE) + STAR_TILE) % STAR_TILE;
+        bgCtx.globalAlpha = s.L.a;
+        for (let ox = sx; ox < w; ox += STAR_TILE)
+            for (let oy = sy; oy < h; oy += STAR_TILE) bgCtx.fillRect(ox, oy, s.L.size, s.L.size);
+    }
+    bgCtx.globalAlpha = 1;
+}
+
+function updateEffects() {
+    const h = fxCanvas.height;
+    fxCtx.clearRect(0, 0, fxCanvas.width, h);
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.op -= 0.035;
+        if (p.op <= 0) { particles[i] = particles[particles.length - 1]; particles.pop(); continue; }
+        fxCtx.globalAlpha = p.op;
+        fxCtx.fillStyle = p.color;
+        fxCtx.fillRect(p.x - cam.x - p.size / 2, h - (p.y - cam.y) - p.size / 2, p.size, p.size);
+    }
+    fxCtx.globalAlpha = 1;
+}
+
+// ================= INDIKATOR MUSUH / KAWAN =================
+// Kawan = bot satu tim dengan player (player tidak dihitung)
+let lastCounts = '';
+function updateCounts() {
+    let enemy = 0, ally = 0;
+    for (const s of ships) {
+        if (s.dead || s.isPlayer) continue;
+        if (s.team === PLAYER_TEAM) ally++; else enemy++;
+    }
+    const key = `${enemy},${ally}`;
+    if (key === lastCounts) return;
+    lastCounts = key;
+    enemyCount.textContent = enemy;
+    allyCount.textContent = ally;
 }
 
 // ================= INPUT & START =================
