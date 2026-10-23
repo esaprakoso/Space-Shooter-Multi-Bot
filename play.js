@@ -6,6 +6,7 @@ const MAX_FUEL = 100, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
 const MAX_METEORS = 10;
 const BULLET_DAMAGE = 15;      // damage peluru ke meteor
+const BULLET_LIFE = 100;       // umur peluru (frame) sebelum hilang
 const BULLET_MASS = 2;         // massa peluru (untuk dorongan momentum)
 const METEOR_MAX_SPEED = 5;
 const METEOR_TYPES = [         // r = radius, hp = durabilitas (kecil = 1 tembakan hancur)
@@ -15,7 +16,6 @@ const METEOR_TYPES = [         // r = radius, hp = durabilitas (kecil = 1 tembak
 ];
 const AVOID_METEOR = 80;   // jarak aman bot dari meteor (px)
 const AVOID_SHIP = 60;     // jarak aman bot dari pesawat lain (px, di luar badan)
-const AVOID_WALL = 90;     // jarak aman bot dari tepi layar (px)
 
 const TEAMS = {
     blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
@@ -41,6 +41,7 @@ const keys = {};
 const ships = [];
 const bullets = [];
 const meteors = [];
+const cam = { x: 0, y: 0 };   // pojok kiri-bawah layar dalam koordinat dunia
 
 // ================= UTIL =================
 function resolveCollision(a, b, restitution = 0.75) {
@@ -83,7 +84,7 @@ function createExplosion(cx, cy, count = 24) {
         let px = cx, py = cy, op = 1;
         (function anim() {
             px += Math.cos(a) * s; py += Math.sin(a) * s; op -= 0.035;
-            p.style.transform = `translate(${px}px, ${-py}px)`;
+            p.style.transform = `translate(${px - cam.x}px, ${-(py - cam.y)}px)`;
             p.style.opacity = op;
             if (op > 0) requestAnimationFrame(anim); else p.remove();
         })();
@@ -203,11 +204,6 @@ class Ship {
                 ay += ((this.y - s.y) / d) * f * 2;
             }
         }
-        const M = AVOID_WALL;
-        if (this.x < M) ax += (M - this.x) / M;
-        if (this.x > window.innerWidth - M) ax -= (this.x - (window.innerWidth - M)) / M;
-        if (this.y < M) ay += (M - this.y) / M;
-        if (this.y > window.innerHeight - M) ay -= (this.y - (window.innerHeight - M)) / M;
 
         if (Math.hypot(ax, ay) > 0.15) {
             let fd = (Math.atan2(ax, ay) * 180) / Math.PI - this.angle;
@@ -263,15 +259,6 @@ class Ship {
         this.vx *= FRICTION; this.vy *= FRICTION;
         this.x += this.vx; this.y += this.vy;
 
-        // Pantulan dinding (player kena damage)
-        const minX = W / 2, maxX = window.innerWidth - W / 2;
-        const minY = H / 2, maxY = window.innerHeight - H / 2;
-        const hit = (v) => { if (p.wallDamage) this.takeDamage(Math.max(4, Math.round(Math.abs(v) * 6))); };
-        if (this.x <= minX) { this.x = minX; hit(this.vx); this.vx = -this.vx * 0.5; }
-        if (this.x >= maxX) { this.x = maxX; hit(this.vx); this.vx = -this.vx * 0.5; }
-        if (this.y <= minY) { this.y = minY; hit(this.vy); this.vy = -this.vy * 0.5; }
-        if (this.y >= maxY) { this.y = maxY; hit(this.vy); this.vy = -this.vy * 0.5; }
-
         // Amunisi: habis -> terkunci sampai terisi ulang >= ammoUnlock
         if (this.ammo < 1) this.ammoEmpty = true;
         else if (this.ammoEmpty && this.ammo >= p.ammoUnlock) this.ammoEmpty = false;
@@ -291,7 +278,7 @@ class Ship {
         el.style.cssText = `width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 10px ${this.c.bullet}`;
         document.body.appendChild(el);
         bullets.push({
-            el, owner: this, angle: this.angle,
+            el, owner: this, angle: this.angle, life: BULLET_LIFE,
             x: this.x, y: this.y,
             vx: this.vx + 14 * Math.sin(rad), vy: this.vy + 14 * Math.cos(rad),
         });
@@ -329,7 +316,7 @@ class Ship {
     }
 
     render() {
-        this.el.style.transform = `translate(${this.x - W / 2}px, ${-(this.y - H / 2)}px) rotate(${this.angle}deg)`;
+        this.el.style.transform = `translate(${this.x - W / 2 - cam.x}px, ${-(this.y - H / 2 - cam.y)}px) rotate(${this.angle}deg)`;
         for (const k in this.fxEls) this.fxEls[k].classList.toggle('hidden', !this.fx[k === 'rev' ? 'rev' : k]);
 
         if (this.isPlayer) {
@@ -343,7 +330,7 @@ class Ship {
             ammoBar.style.opacity = this.ammoEmpty ? 0.4 : 1;
             ammoText.textContent = this.ammoEmpty ? 'RELOAD' : `${Math.floor(this.ammo)}/${this.p.maxAmmo}`;
         } else {
-            this.hud.style.transform = `translate(${this.x - 28}px, ${-(this.y + H / 2 + 6)}px)`;
+            this.hud.style.transform = `translate(${this.x - 28 - cam.x}px, ${-(this.y + H / 2 + 6 - cam.y)}px)`;
             this.hudBar.style.width = `${this.hull}%`;
             this.hudAmmo.style.width = `${(this.ammo / this.p.maxAmmo) * 100}%`;
             this.hudAmmo.style.opacity = this.ammoEmpty ? 0.4 : 1;
@@ -368,16 +355,16 @@ function checkVictory() {
 }
 
 function spawnBot(team) {
-    const rx = team === 'red' ? 0.05 + Math.random() * 0.25 : 0.45 + Math.random() * 0.15;
+    const rx = team === 'red' ? 0.05 + Math.random() * 0.25 : 0.62 + Math.random() * 0.18;
     const bot = new Ship(team);
-    bot.reset(window.innerWidth * rx, window.innerHeight * (0.15 + Math.random() * 0.7), team === 'red' ? 90 : -90);
+    bot.reset(cam.x + window.innerWidth * rx, cam.y + window.innerHeight * (0.15 + Math.random() * 0.7), team === 'red' ? 90 : -90);
     ships.push(bot);
     if (!player.dead) gameOverBox.classList.add('hidden');
 }
 
 function resetGame() {
     [...ships].forEach(s => { if (!s.isPlayer) s.remove(); });
-    player.reset(window.innerWidth * 0.75, window.innerHeight / 2, 0);
+    player.reset(0, 0, 0); updateCamera();
 
     Object.keys(keys).forEach(k => keys[k] = false);
     bullets.forEach(b => b.el.remove()); bullets.length = 0;
@@ -394,6 +381,8 @@ function spawnMeteor() {
     const radius = type.r;
     const speed = Math.random() * 0.4 + 0.1;
     const ang = Math.random() * Math.PI * 2;
+    const sa = Math.random() * Math.PI * 2;
+    const sd = Math.hypot(window.innerWidth, window.innerHeight) / 2 + 40 + Math.random() * 150;
 
     const el = document.createElement('div');
     el.className = 'fixed left-0 bottom-0 rounded-full border border-stone-400 bg-stone-700/90 pointer-events-none z-10 shadow-[0_0_4px_rgba(168,162,158,0.5)]';
@@ -402,8 +391,8 @@ function spawnMeteor() {
 
     meteors.push({
         el, radius, mass: radius * 2.2, hp: type.hp, maxHp: type.hp,
-        x: Math.random() * window.innerWidth,
-        y: Math.random() < 0.5 ? -radius : window.innerHeight + radius,
+        x: cam.x + window.innerWidth / 2 + Math.cos(sa) * sd,
+        y: cam.y + window.innerHeight / 2 + Math.sin(sa) * sd,
         vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
     });
 }
@@ -416,12 +405,13 @@ function updateMeteors() {
         const m = meteors[i];
         m.x += m.vx; m.y += m.vy;
 
-        if (m.x < -m.radius * 2) m.x = window.innerWidth + m.radius;
-        if (m.x > window.innerWidth + m.radius * 2) m.x = -m.radius;
-        if (m.y < -m.radius * 2) m.y = window.innerHeight + m.radius;
-        if (m.y > window.innerHeight + m.radius * 2) m.y = -m.radius;
+        // Terlalu jauh dari kamera -> hapus
+        if (Math.hypot(m.x - (cam.x + window.innerWidth / 2), m.y - (cam.y + window.innerHeight / 2)) > Math.hypot(window.innerWidth, window.innerHeight)) {
+            m.el.remove(); meteors.splice(i, 1);
+            continue;
+        }
 
-        m.el.style.transform = `translate(${m.x - m.radius}px, ${-(m.y - m.radius)}px)`;
+        m.el.style.transform = `translate(${m.x - m.radius - cam.x}px, ${-(m.y - m.radius - cam.y)}px)`;
 
         // Peluru vs meteor: kurangi HP + transfer momentum (meteor terdorong)
         let destroyed = false;
@@ -460,11 +450,11 @@ function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx; b.y += b.vy;
-        b.el.style.transform = `translate(${b.x - 4}px, ${-(b.y - 8)}px) rotate(${b.angle}deg)`;
+        b.el.style.transform = `translate(${b.x - 4 - cam.x}px, ${-(b.y - 8 - cam.y)}px) rotate(${b.angle}deg)`;
 
         // Friendly fire aktif: kena siapa saja kecuali penembaknya sendiri
         const target = ships.find(s => !s.dead && s !== b.owner && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
-        const out = b.x < -20 || b.x > window.innerWidth + 20 || b.y < -20 || b.y > window.innerHeight + 20;
+        const out = --b.life <= 0;
 
         if (target || out) {
             b.el.remove(); bullets.splice(i, 1);
@@ -495,10 +485,36 @@ function gameLoop(ts) {
         }
     }
 
+    updateCamera();
+    updateBackground();
     updateBullets();
     updateMeteors();
     ships.forEach(s => s.render());
     requestAnimationFrame(gameLoop);
+}
+
+// ================= KAMERA & LATAR =================
+// Dunia tak terbatas: kamera selalu memusatkan player (diam saat player mati)
+function updateCamera() {
+    if (player.dead) return;
+    cam.x = player.x - window.innerWidth / 2;
+    cam.y = player.y - window.innerHeight / 2;
+}
+
+// Bintang berlapis (parallax) supaya gerakan terasa di ruang kosong
+const bg = document.createElement('div');
+bg.className = 'fixed inset-0 z-0 pointer-events-none';
+bg.style.backgroundImage = [
+    'radial-gradient(1px 1px at 30px 40px, rgba(255,255,255,.5) 50%, transparent)',
+    'radial-gradient(1.5px 1.5px at 120px 90px, rgba(255,255,255,.7) 50%, transparent)',
+    'radial-gradient(2px 2px at 70px 150px, rgba(255,255,255,.9) 50%, transparent)',
+].join(',');
+bg.style.backgroundSize = '170px 190px, 230px 210px, 310px 270px';
+document.body.prepend(bg);
+
+function updateBackground() {
+    const f = [0.2, 0.4, 0.7];
+    bg.style.backgroundPosition = f.map(k => `${-cam.x * k}px ${cam.y * k}px`).join(',');
 }
 
 // ================= INPUT & START =================
@@ -513,6 +529,6 @@ $('reset-btn').addEventListener('click', (e) => { resetGame(); e.currentTarget.b
 $('add-red').addEventListener('click', (e) => { spawnBot('red'); e.currentTarget.blur(); });
 $('add-blue').addEventListener('click', (e) => { spawnBot('blue'); e.currentTarget.blur(); });
 
-player.reset(window.innerWidth * 0.75, window.innerHeight / 2, 0);
+player.reset(0, 0, 0); updateCamera();
 INITIAL_BOTS.forEach(spawnBot);
 requestAnimationFrame(gameLoop);
