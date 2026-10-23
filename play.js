@@ -113,7 +113,7 @@ class Ship {
     buildPlane() {
         const c = this.c;
         const el = document.createElement('div');
-        el.className = 'fixed left-0 bottom-0 w-10 h-12 pointer-events-none z-10';
+        el.className = 'fixed left-0 top-0 w-10 h-12 pointer-events-none z-10';
         el.style.willChange = 'transform';
         el.innerHTML = `
         <svg viewBox="-8 -6 40 42" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
@@ -137,7 +137,7 @@ class Ship {
 
     buildHud() {
         const hud = document.createElement('div');
-        hud.className = 'fixed left-0 bottom-0 w-14 z-20 pointer-events-none';
+        hud.className = 'fixed left-0 top-0 w-14 z-20 pointer-events-none';
         hud.innerHTML = `
         <div class="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden border border-gray-700">
             <div class="h-full w-full transition-all duration-150" style="background:${this.c.body}"></div>
@@ -286,15 +286,15 @@ class Ship {
         }
     }
 
-    // Perbaikan: Peluru keluar tepat di moncong depan pesawat (nose offset)
+    // Tembak dari moncong depan pesawat (noseOffset = 16px)
     shoot() {
         const rad = (this.angle * Math.PI) / 180;
-        const noseOffset = 22; // Offset dari titik tengah badan ke moncong depan
+        const noseOffset = 16;
         const spawnX = this.x + Math.sin(rad) * noseOffset;
         const spawnY = this.y + Math.cos(rad) * noseOffset;
 
         const el = document.createElement('div');
-        el.style.cssText = `position:fixed;left:0;bottom:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
+        el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
         document.body.appendChild(el);
         bullets.push({
             el, owner: this, angle: this.angle, life: BULLET_LIFE,
@@ -352,7 +352,10 @@ class Ship {
     }
 
     render() {
-        this.el.style.transform = `translate(${this.x - W / 2 - cam.x}px, ${-(this.y + H / 2 - cam.y)}px) rotate(${this.angle}deg)`;
+        const sx = this.x - cam.x;
+        const sy = window.innerHeight - (this.y - cam.y);
+
+        this.el.style.transform = `translate(${sx - W / 2}px, ${sy - H / 2}px) rotate(${this.angle}deg)`;
         for (const k in this.fxEls) {
             const on = !!this.fx[k];
             if (this._fx[k] !== on) { this._fx[k] = on; this.fxEls[k].style.display = on ? '' : 'none'; }
@@ -372,10 +375,9 @@ class Ship {
             ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
             setTxt(ammoText, ammoTxt);
 
-            // Update statistik di mini bar header
             setTxt($('hud-status-mini'), `${Math.round(this.hull)}% HP · ${ammoTxt}`);
         } else {
-            this.hud.style.transform = `translate(${this.x - 28 - cam.x}px, ${-(this.y + H / 2 + 6 - cam.y)}px)`;
+            this.hud.style.transform = `translate(${sx - 28}px, ${sy - H / 2 - 16}px)`;
             setW(this.hudBar, `${this.hull}%`);
             setW(this.hudAmmo, `${(this.ammo / this.p.magSize) * 100}%`);
             this.hudAmmo.style.opacity = this.reloadUntil ? '0.4' : '1';
@@ -430,7 +432,7 @@ function spawnMeteor() {
     const sd = Math.hypot(window.innerWidth, window.innerHeight) / 2 + 40 + Math.random() * 150;
 
     const el = document.createElement('div');
-    el.style.cssText = `position:fixed;left:0;bottom:0;pointer-events:none;z-index:10;border-radius:9999px;box-sizing:border-box;border:1px solid #a8a29e;background:rgba(68,64,60,.9);will-change:transform;width:${radius * 2}px;height:${radius * 2}px`;
+    el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;box-sizing:border-box;border:1px solid #a8a29e;background:rgba(68,64,60,.9);will-change:transform;width:${radius * 2}px;height:${radius * 2}px`;
     document.body.appendChild(el);
 
     meteors.push({
@@ -454,7 +456,9 @@ function updateMeteors() {
             continue;
         }
 
-        m.el.style.transform = `translate(${m.x - m.radius - cam.x}px, ${-(m.y + m.radius - cam.y)}px)`;
+        const sx = m.x - cam.x;
+        const sy = window.innerHeight - (m.y - cam.y);
+        m.el.style.transform = `translate(${sx - m.radius}px, ${sy - m.radius}px)`;
 
         let destroyed = false;
         for (let bi = bullets.length - 1; bi >= 0; bi--) {
@@ -491,7 +495,10 @@ function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx; b.y += b.vy;
-        b.el.style.transform = `translate(${b.x - 4 - cam.x}px, ${-(b.y + 8 - cam.y)}px) rotate(${b.angle}deg)`;
+
+        const sx = b.x - cam.x;
+        const sy = window.innerHeight - (b.y - cam.y);
+        b.el.style.transform = `translate(${sx - 4}px, ${sy - 8}px) rotate(${b.angle}deg)`;
 
         const target = ships.find(s => !s.dead && s !== b.owner && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
         const out = --b.life <= 0;
@@ -514,7 +521,7 @@ function spawnPickup() {
     const type = Math.random() < 0.5 ? 'health' : 'mag';
     const c = PICKUP_TYPES[type];
     const el = document.createElement('div');
-    el.style.cssText = `position:fixed;left:0;bottom:0;pointer-events:none;z-index:10;will-change:transform;width:${PICKUP_RADIUS * 2}px;height:${PICKUP_RADIUS * 2}px`;
+    el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;will-change:transform;width:${PICKUP_RADIUS * 2}px;height:${PICKUP_RADIUS * 2}px`;
     el.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%">
         <rect x="1" y="1" width="22" height="22" rx="5" fill="${c.color}" stroke="#fff" stroke-opacity=".7"/>${c.icon}</svg>`;
     document.body.appendChild(el);
@@ -531,7 +538,9 @@ function updatePickups() {
 
     for (let i = pickups.length - 1; i >= 0; i--) {
         const k = pickups[i];
-        k.el.style.transform = `translate(${k.x - PICKUP_RADIUS - cam.x}px, ${-(k.y + PICKUP_RADIUS - cam.y)}px)`;
+        const sx = k.x - cam.x;
+        const sy = window.innerHeight - (k.y - cam.y);
+        k.el.style.transform = `translate(${sx - PICKUP_RADIUS}px, ${sy - PICKUP_RADIUS}px)`;
 
         if (Math.hypot(k.x - (cam.x + window.innerWidth / 2), k.y - (cam.y + window.innerHeight / 2)) > far) {
             k.el.remove(); pickups.splice(i, 1);
@@ -707,7 +716,7 @@ document.querySelectorAll('[data-key]').forEach(btn => {
 
 // ================= JOYSTICK VIRTUAL (MULTI-TOUCH) =================
 const joyBase = $('joy-base'), joyKnob = $('joy-knob');
-const JOY_MAX_R = 44; // Maksimal batas geser (72px radius luar - 28px radius knob)
+const JOY_MAX_R = 44;
 let joyTouchId = null;
 
 function updateJoyPos(clientX, clientY) {
@@ -726,17 +735,15 @@ function updateJoyPos(clientX, clientY) {
     }
 
     joy.dx = x / JOY_MAX_R;
-    joy.dy = -y / JOY_MAX_R; // Y ke atas bernilai positif
+    joy.dy = -y / JOY_MAX_R;
 
-    // Penyesuaian posisi piksel langsung dari titik tengah
     if (joyKnob) joyKnob.style.transform = `translate(${x}px, ${y}px)`;
 }
 
 function resetJoy() {
     joyTouchId = null;
     joy.active = false;
-    joy.dx = 0;
-    joy.dy = 0;
+    joy.dx = 0; joy.dy = 0;
     if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
 }
 
@@ -773,7 +780,6 @@ if (joyBase) {
     window.addEventListener('touchend', endTouchHandler);
     window.addEventListener('touchcancel', endTouchHandler);
 
-    // Fallback Mouse Desktop
     joyBase.addEventListener('mousedown', (e) => {
         if (joy.active) return;
         joy.active = true;
@@ -795,7 +801,6 @@ const hudDetails = $('hud-details');
 const hudArrow = $('hud-arrow');
 const hudToggle = $('hud-toggle');
 
-// Otomatis buka jika di layar monitor besar
 if (window.innerWidth > 768 && window.innerHeight > 550) {
     if (hudDetails) hudDetails.classList.remove('hidden');
     if (hudArrow) hudArrow.style.transform = 'rotate(180deg)';
