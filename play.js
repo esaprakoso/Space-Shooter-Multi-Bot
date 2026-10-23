@@ -288,12 +288,16 @@ class Ship {
 
     shoot() {
         const rad = (this.angle * Math.PI) / 180;
+        const noseOffset = 18; // Jarak dari titik pusat ke moncong depan pesawat
+        const spawnX = this.x + Math.sin(rad) * noseOffset;
+        const spawnY = this.y + Math.cos(rad) * noseOffset;
+
         const el = document.createElement('div');
         el.style.cssText = `position:fixed;left:0;bottom:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
         document.body.appendChild(el);
         bullets.push({
             el, owner: this, angle: this.angle, life: BULLET_LIFE,
-            x: this.x, y: this.y,
+            x: spawnX, y: spawnY,
             vx: this.vx + 14 * Math.sin(rad), vy: this.vy + 14 * Math.cos(rad),
         });
     }
@@ -355,6 +359,8 @@ class Ship {
 
         if (this.isPlayer) {
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
+            const ammoStatus = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
+
             setW(hullBar, `${this.hull}%`);
             setTxt(hullText, `${Math.round(this.hull)}%`);
             setW(mainFuelBar, `${this.main}%`);
@@ -363,9 +369,11 @@ class Ship {
             setTxt(rcsFuelText, `${Math.round(this.rcs)}%`);
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
             ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
-            setTxt(ammoText, noAmmo ? 'NO AMMO'
-                : this.reloadUntil ? `RELOAD · MAG ${this.mags}`
-                    : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`);
+            setTxt(ammoText, ammoStatus);
+
+            // Update mini bar HUD mobile
+            const miniHud = $('hud-status-mini');
+            if (miniHud) setTxt(miniHud, `${Math.round(this.hull)}% HP · ${ammoStatus}`);
         } else {
             this.hud.style.transform = `translate(${this.x - 28 - cam.x}px, ${-(this.y + H / 2 + 6 - cam.y)}px)`;
             setW(this.hudBar, `${this.hull}%`);
@@ -806,3 +814,14 @@ $('add-blue').addEventListener('click', (e) => { spawnBot('blue'); e.currentTarg
 player.reset(0, 0, 0); updateCamera();
 INITIAL_BOTS.forEach(spawnBot);
 requestAnimationFrame(gameLoop);
+
+const hudToggle = $('hud-toggle');
+const hudDetails = $('hud-details');
+const hudArrow = $('hud-arrow');
+if (hudToggle && hudDetails) {
+    hudToggle.addEventListener('click', () => {
+        const isHidden = hudDetails.classList.contains('hidden');
+        hudDetails.classList.toggle('hidden', !isHidden);
+        if (hudArrow) hudArrow.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+    });
+}

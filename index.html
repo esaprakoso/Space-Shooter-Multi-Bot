@@ -47,47 +47,59 @@
 <body class="bg-gray-950 w-screen relative font-mono">
 
     <!-- HUD PLAYER 1 (POJOK KANAN ATAS) -->
-    <div class="fixed top-4 right-4 w-64 z-20 space-y-2">
-        <div class="bg-gray-900/80 p-3 rounded-lg border border-gray-800 backdrop-blur space-y-2.5 shadow-lg">
-            <p class="text-blue-400 font-bold text-xs uppercase border-b border-gray-800 pb-1">PLAYER 1 (BIRU)</p>
-            <div>
-                <div class="flex justify-between text-xs font-bold mb-1">
-                    <span class="text-green-400">HULL INTEGRITY</span>
-                    <span id="hull-text" class="text-green-400">100%</span>
+    <div class="fixed top-4 right-4 w-52 sm:w-64 z-20 space-y-2">
+        <div id="hud-panel"
+            class="bg-gray-900/90 p-3 rounded-lg border border-gray-800 backdrop-blur space-y-2.5 shadow-lg">
+            <!-- Header Bar / Mini Bar di Mobile -->
+            <div id="hud-toggle" class="flex justify-between items-center cursor-pointer select-none">
+                <div>
+                    <p class="text-blue-400 font-bold text-xs uppercase">PLAYER 1 (BIRU)</p>
+                    <p id="hud-status-mini" class="text-[10px] text-green-400 sm:hidden">100% HP · 20/20</p>
                 </div>
-                <div class="w-full bg-gray-800 h-2.5 rounded-full overflow-hidden border border-green-500/30">
-                    <div id="hull-bar" class="bg-green-500 h-full w-full transition-all duration-150"></div>
-                </div>
+                <span id="hud-arrow" class="text-xs text-gray-400 transition-transform duration-200 sm:hidden">▼</span>
             </div>
-            <div>
-                <div class="flex justify-between text-xs text-orange-400 font-bold mb-1">
-                    <span>MAIN ENGINE</span>
-                    <span id="main-fuel-text">100%</span>
+    
+            <!-- Detail HUD (Otomatis tersembunyi di mobile, terbuka di desktop) -->
+            <div id="hud-details" class="hidden sm:block space-y-2.5 pt-2 border-t border-gray-800">
+                <div>
+                    <div class="flex justify-between text-xs font-bold mb-1">
+                        <span class="text-green-400">HULL INTEGRITY</span>
+                        <span id="hull-text" class="text-green-400">100%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 h-2.5 rounded-full overflow-hidden border border-green-500/30">
+                        <div id="hull-bar" class="bg-green-500 h-full w-full transition-all duration-150"></div>
+                    </div>
                 </div>
-                <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-orange-500/30">
-                    <div id="main-fuel-bar" class="bg-orange-500 h-full w-full transition-all duration-75"></div>
+                <div>
+                    <div class="flex justify-between text-xs text-orange-400 font-bold mb-1">
+                        <span>MAIN ENGINE</span>
+                        <span id="main-fuel-text">100%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-orange-500/30">
+                        <div id="main-fuel-bar" class="bg-orange-500 h-full w-full transition-all duration-75"></div>
+                    </div>
                 </div>
-            </div>
-            <div>
-                <div class="flex justify-between text-xs text-cyan-400 font-bold mb-1">
-                    <span>RCS MANEUVER</span>
-                    <span id="rcs-fuel-text">100%</span>
+                <div>
+                    <div class="flex justify-between text-xs text-cyan-400 font-bold mb-1">
+                        <span>RCS MANEUVER</span>
+                        <span id="rcs-fuel-text">100%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-cyan-500/30">
+                        <div id="rcs-fuel-bar" class="bg-cyan-400 h-full w-full transition-all duration-75"></div>
+                    </div>
                 </div>
-                <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-cyan-500/30">
-                    <div id="rcs-fuel-bar" class="bg-cyan-400 h-full w-full transition-all duration-75"></div>
-                </div>
-            </div>
-            <div>
-                <div class="flex justify-between text-xs text-yellow-400 font-bold mb-1">
-                    <span>AMMO</span>
-                    <span id="ammo-text">20/20</span>
-                </div>
-                <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-yellow-500/30">
-                    <div id="ammo-bar" class="bg-yellow-400 h-full w-full transition-all duration-75"></div>
+                <div>
+                    <div class="flex justify-between text-xs text-yellow-400 font-bold mb-1">
+                        <span>AMMO</span>
+                        <span id="ammo-text">20/20</span>
+                    </div>
+                    <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-yellow-500/30">
+                        <div id="ammo-bar" class="bg-yellow-400 h-full w-full transition-all duration-75"></div>
+                    </div>
                 </div>
             </div>
         </div>
-
+    
         <!-- RESTART WIDGET -->
         <div id="game-over-box"
             class="hidden bg-red-950/90 border border-red-500/60 p-3 rounded-lg backdrop-blur text-center space-y-2 shadow-lg shadow-red-900/40">
