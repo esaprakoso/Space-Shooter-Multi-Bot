@@ -286,9 +286,10 @@ class Ship {
         }
     }
 
+    // Perbaikan: Peluru keluar tepat di moncong depan pesawat (nose offset)
     shoot() {
         const rad = (this.angle * Math.PI) / 180;
-        const noseOffset = 18; // Jarak dari titik pusat ke moncong depan pesawat
+        const noseOffset = 22; // Offset dari titik tengah badan ke moncong depan
         const spawnX = this.x + Math.sin(rad) * noseOffset;
         const spawnY = this.y + Math.cos(rad) * noseOffset;
 
@@ -359,7 +360,7 @@ class Ship {
 
         if (this.isPlayer) {
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
-            const ammoStatus = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
+            const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
 
             setW(hullBar, `${this.hull}%`);
             setTxt(hullText, `${Math.round(this.hull)}%`);
@@ -369,11 +370,10 @@ class Ship {
             setTxt(rcsFuelText, `${Math.round(this.rcs)}%`);
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
             ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
-            setTxt(ammoText, ammoStatus);
+            setTxt(ammoText, ammoTxt);
 
-            // Update mini bar HUD mobile
-            const miniHud = $('hud-status-mini');
-            if (miniHud) setTxt(miniHud, `${Math.round(this.hull)}% HP · ${ammoStatus}`);
+            // Update statistik di mini bar header
+            setTxt($('hud-status-mini'), `${Math.round(this.hull)}% HP · ${ammoTxt}`);
         } else {
             this.hud.style.transform = `translate(${this.x - 28 - cam.x}px, ${-(this.y + H / 2 + 6 - cam.y)}px)`;
             setW(this.hudBar, `${this.hull}%`);
@@ -705,35 +705,41 @@ document.querySelectorAll('[data-key]').forEach(btn => {
     btn.style.opacity = '0.7';
 });
 
-// ================= JOYSTICK VIRTUAL (NATIVE MULTI-TOUCH) =================
+// ================= JOYSTICK VIRTUAL (MULTI-TOUCH) =================
 const joyBase = $('joy-base'), joyKnob = $('joy-knob');
-const JOY_R = 54;
+const JOY_MAX_R = 44; // Maksimal batas geser (72px radius luar - 28px radius knob)
 let joyTouchId = null;
-let joyCenter = { x: 0, y: 0 };
 
 function updateJoyPos(clientX, clientY) {
-    let x = clientX - joyCenter.x;
-    let y = clientY - joyCenter.y;
+    if (!joyBase) return;
+    const rect = joyBase.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    let x = clientX - centerX;
+    let y = clientY - centerY;
     const dist = Math.hypot(x, y);
 
-    if (dist > JOY_R) {
-        x = (x / dist) * JOY_R;
-        y = (y / dist) * JOY_R;
+    if (dist > JOY_MAX_R) {
+        x = (x / dist) * JOY_MAX_R;
+        y = (y / dist) * JOY_MAX_R;
     }
 
-    joy.dx = x / JOY_R;
-    joy.dy = -y / JOY_R; // Y ke atas positif
-    joyKnob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    joy.dx = x / JOY_MAX_R;
+    joy.dy = -y / JOY_MAX_R; // Y ke atas bernilai positif
+
+    // Penyesuaian posisi piksel langsung dari titik tengah
+    if (joyKnob) joyKnob.style.transform = `translate(${x}px, ${y}px)`;
 }
 
 function resetJoy() {
     joyTouchId = null;
     joy.active = false;
-    joy.dx = 0; joy.dy = 0;
-    joyKnob.style.transform = 'translate(-50%, -50%)';
+    joy.dx = 0;
+    joy.dy = 0;
+    if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
 }
 
-// 1. Handling Layar Sentuh (Touch Events) - Sangat stabil untuk multi-touch
 if (joyBase) {
     joyBase.addEventListener('touchstart', (e) => {
         e.preventDefault();
@@ -741,9 +747,6 @@ if (joyBase) {
         const touch = e.changedTouches[0];
         joyTouchId = touch.identifier;
         joy.active = true;
-
-        const rect = joyBase.getBoundingClientRect();
-        joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         updateJoyPos(touch.clientX, touch.clientY);
     }, { passive: false });
 
@@ -770,12 +773,10 @@ if (joyBase) {
     window.addEventListener('touchend', endTouchHandler);
     window.addEventListener('touchcancel', endTouchHandler);
 
-    // 2. Handling Mouse Fallback (untuk testing desktop via Klik Drag)
+    // Fallback Mouse Desktop
     joyBase.addEventListener('mousedown', (e) => {
         if (joy.active) return;
         joy.active = true;
-        const rect = joyBase.getBoundingClientRect();
-        joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         updateJoyPos(e.clientX, e.clientY);
 
         const onMouseMove = (me) => updateJoyPos(me.clientX, me.clientY);
@@ -786,6 +787,25 @@ if (joyBase) {
         };
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup', onMouseUp);
+    });
+}
+
+// ================= TOGGLE HUD =================
+const hudDetails = $('hud-details');
+const hudArrow = $('hud-arrow');
+const hudToggle = $('hud-toggle');
+
+// Otomatis buka jika di layar monitor besar
+if (window.innerWidth > 768 && window.innerHeight > 550) {
+    if (hudDetails) hudDetails.classList.remove('hidden');
+    if (hudArrow) hudArrow.style.transform = 'rotate(180deg)';
+}
+
+if (hudToggle && hudDetails) {
+    hudToggle.addEventListener('click', () => {
+        const isHidden = hudDetails.classList.contains('hidden');
+        hudDetails.classList.toggle('hidden', !isHidden);
+        if (hudArrow) hudArrow.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
     });
 }
 
@@ -814,14 +834,3 @@ $('add-blue').addEventListener('click', (e) => { spawnBot('blue'); e.currentTarg
 player.reset(0, 0, 0); updateCamera();
 INITIAL_BOTS.forEach(spawnBot);
 requestAnimationFrame(gameLoop);
-
-const hudToggle = $('hud-toggle');
-const hudDetails = $('hud-details');
-const hudArrow = $('hud-arrow');
-if (hudToggle && hudDetails) {
-    hudToggle.addEventListener('click', () => {
-        const isHidden = hudDetails.classList.contains('hidden');
-        hudDetails.classList.toggle('hidden', !isHidden);
-        if (hudArrow) hudArrow.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
-    });
-}
