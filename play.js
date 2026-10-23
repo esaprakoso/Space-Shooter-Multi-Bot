@@ -45,6 +45,7 @@ const enemyCount = $('enemy-count'), allyCount = $('ally-count');
 
 // ================= STATE =================
 const keys = {};
+const joy = { active: false, dx: 0, dy: 0 };   // joystick virtual (dx, dy: -1..1, y ke atas)
 const ships = [];
 const bullets = [];
 const meteors = [];
@@ -175,6 +176,17 @@ class Ship {
             thrust: !!(k.ArrowUp || k.KeyW),
             shoot: !!k.Space,
         };
+
+        // Joystick: arahkan pesawat ke arah stick, gas jika sudah searah
+        if (joy.active && Math.hypot(joy.dx, joy.dy) > 0.25) {
+            let diff = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI - this.angle;
+            while (diff < -180) diff += 360;
+            while (diff > 180) diff -= 360;
+            const pd = diff - this.vAngle * 10;   // prediksi putaran agar tidak overshoot
+            if (pd < -4) this.input.left = true;
+            else if (pd > 4) this.input.right = true;
+            if (Math.abs(diff) < 50) this.input.thrust = true;
+        }
     }
 
     // Target = musuh (beda tim) terdekat
@@ -583,6 +595,7 @@ function updateCamera() {
         if (keys.ArrowRight || keys.KeyD) cam.x += SPECTATE_SPEED;
         if (keys.ArrowUp || keys.KeyW) cam.y += SPECTATE_SPEED;
         if (keys.ArrowDown || keys.KeyS) cam.y -= SPECTATE_SPEED;
+        if (joy.active) { cam.x += joy.dx * SPECTATE_SPEED; cam.y += joy.dy * SPECTATE_SPEED; }
         return;
     }
     cam.x = player.x - window.innerWidth / 2;
@@ -705,6 +718,54 @@ document.querySelectorAll('[data-key]').forEach(btn => {
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
     btn.style.opacity = 0.7;
 });
+
+// Joystick virtual (pointer events + capture, tidak mengganggu tombol lain)
+const joyBase = $('joy-base'), joyKnob = $('joy-knob');
+const JOY_R = 54;
+let joyId = null;
+
+function joyMove(e) {
+    const r = joyBase.getBoundingClientRect();
+    let x = e.clientX - (r.left + r.width / 2), y = e.clientY - (r.top + r.height / 2);
+    const d = Math.hypot(x, y);
+    if (d > JOY_R) { x = (x / d) * JOY_R; y = (y / d) * JOY_R; }
+    joy.dx = x / JOY_R; joy.dy = -y / JOY_R;
+    joyKnob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+}
+function joyEnd(e) {
+    if (e && e.pointerId !== joyId) return;
+    joyId = null; joy.active = false; joy.dx = joy.dy = 0;
+    joyKnob.style.transform = 'translate(-50%, -50%)';
+}
+joyBase.addEventListener('pointerdown', (e) => {
+    if (joy.active) return;
+    e.preventDefault();
+    joyId = e.pointerId; joy.active = true;
+    joyBase.setPointerCapture(e.pointerId);
+    joyMove(e);
+});
+joyBase.addEventListener('pointermove', (e) => { if (joy.active && e.pointerId === joyId) joyMove(e); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => joyBase.addEventListener(ev, joyEnd));
+joyEnd();
+
+// Layar penuh (menyembunyikan url bar) + kunci landscape. iOS Safari tidak mendukung -> Add to Home Screen.
+const fsBtn = $('fs-btn');
+const canFullscreen = !!document.documentElement.requestFullscreen;
+async function goFullscreen() {
+    try {
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+        if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+    } catch (err) { /* ditolak browser: abaikan */ }
+}
+if (!canFullscreen) fsBtn.style.display = 'none';
+fsBtn.addEventListener('click', goFullscreen);
+document.addEventListener('fullscreenchange', () => {
+    fsBtn.style.display = (!canFullscreen || document.fullscreenElement) ? 'none' : '';
+});
+// Otomatis dicoba pada sentuhan pertama di perangkat sentuh
+if (canFullscreen && window.matchMedia('(pointer: coarse)').matches) {
+    document.addEventListener('pointerup', goFullscreen, { once: true });
+}
 
 // blur() agar tombol Space (tembak) tidak ikut "menekan" tombol yang terfokus
 $('reset-btn').addEventListener('click', (e) => { resetGame(); e.currentTarget.blur(); });

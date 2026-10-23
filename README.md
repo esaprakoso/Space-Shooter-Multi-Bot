@@ -25,7 +25,15 @@ Tailwind CSS dimuat dari CDN (`cdn.jsdelivr.net`), jadi perlu koneksi internet.
 
 ### Layar sentuh (landscape)
 
-Tombol on-screen muncul otomatis di perangkat sentuh dalam mode landscape: ◀ ▶ di kiri bawah, ▲ ▼ dan **FIRE** di kanan bawah. Multi-touch didukung. Di mode portrait muncul petunjuk untuk memutar perangkat.
+Kontrol muncul otomatis di perangkat sentuh dalam mode landscape:
+
+- **Joystick (kiri bawah):** arahkan stick ke arah yang diinginkan, pesawat berputar menghadap ke sana dan menyala gas saat sudah searah. Semakin jauh stick didorong, semakin jelas gas menyala (ambang 25%).
+- **FIRE (kanan bawah):** tembak.
+- **REV:** mundur.
+- Multi-touch didukung, jadi joystick, REV, dan FIRE bisa dipakai bersamaan. Di mode penonton, joystick menggeser kamera.
+- **Layar penuh:** sentuhan pertama mencoba masuk layar penuh dan mengunci landscape (menyembunyikan url bar di Android/Chrome). Tombol **⛶ LAYAR PENUH** muncul kalau gagal. iPhone/iPad Safari tidak mendukung API ini, jadi pakai menu Share → Add to Home Screen.
+
+Di mode portrait muncul petunjuk untuk memutar perangkat.
 
 ### Tombol lain
 
