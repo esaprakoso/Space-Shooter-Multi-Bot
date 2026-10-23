@@ -311,7 +311,7 @@ class Ship {
         createExplosion(this.x, this.y, 36);
         if (this.isPlayer) {
             this.el.classList.add('hidden');
-            showStatus('YOU LOST!', 'text-red-500');
+            showStatus('YOU LOST! GESER: ARAH / WASD', 'text-red-500');
         } else {
             this.remove();
             checkVictory();
@@ -384,10 +384,9 @@ function showStatus(text, colorClass) {
 }
 
 function checkVictory() {
-    if (player.dead) return;
-    if (!ships.some(s => !s.dead && s.team !== PLAYER_TEAM)) {
-        showStatus('VICTORY! SEMUA MUSUH HANCUR', 'text-green-400');
-    }
+    if (ships.some(s => !s.dead && s.team !== PLAYER_TEAM)) return;
+    if (!player.dead) showStatus('VICTORY! SEMUA MUSUH HANCUR', 'text-green-400');
+    else if (ships.some(s => !s.dead && !s.isPlayer && s.team === PLAYER_TEAM)) showStatus('TIM KAMU MENANG!', 'text-green-400');
 }
 
 function spawnBot(team) {
@@ -576,8 +575,16 @@ function gameLoop(ts) {
 
 // ================= KAMERA & LATAR =================
 // Dunia tak terbatas: kamera selalu memusatkan player (diam saat player mati)
+const SPECTATE_SPEED = 14;   // kecepatan geser kamera saat player mati (px/frame)
 function updateCamera() {
-    if (player.dead) return;
+    if (player.dead) {
+        // Mode penonton: geser kamera dengan tombol arah / WASD
+        if (keys.ArrowLeft || keys.KeyA) cam.x -= SPECTATE_SPEED;
+        if (keys.ArrowRight || keys.KeyD) cam.x += SPECTATE_SPEED;
+        if (keys.ArrowUp || keys.KeyW) cam.y += SPECTATE_SPEED;
+        if (keys.ArrowDown || keys.KeyS) cam.y -= SPECTATE_SPEED;
+        return;
+    }
     cam.x = player.x - window.innerWidth / 2;
     cam.y = player.y - window.innerHeight / 2;
 }
@@ -630,6 +637,39 @@ function updateEffects() {
         fxCtx.fillRect(p.x - cam.x - p.size / 2, h - (p.y - cam.y) - p.size / 2, p.size, p.size);
     }
     fxCtx.globalAlpha = 1;
+    drawEnemyArrows();
+}
+
+// Panah kecil di tepi layar menunjuk musuh yang berada di luar layar (+ jarak)
+function drawEnemyArrows() {
+    const w = fxCanvas.width, h = fxCanvas.height, cx = w / 2, cy = h / 2, pad = 28;
+    fxCtx.font = 'bold 10px monospace';
+    fxCtx.textAlign = 'center';
+    fxCtx.textBaseline = 'middle';
+    for (const s of ships) {
+        if (s.dead || s.team === PLAYER_TEAM) continue;
+        const sx = s.x - cam.x, sy = h - (s.y - cam.y);
+        if (sx > -20 && sx < w + 20 && sy > -20 && sy < h + 20) continue; // masih terlihat
+
+        const dx = sx - cx, dy = sy - cy;
+        const t = Math.min((cx - pad) / Math.abs(dx || 0.001), (cy - pad) / Math.abs(dy || 0.001));
+        const px = cx + dx * t, py = cy + dy * t;
+        const ang = Math.atan2(dy, dx);
+
+        fxCtx.save();
+        fxCtx.translate(px, py);
+        fxCtx.rotate(ang);
+        fxCtx.fillStyle = '#ef4444';
+        fxCtx.strokeStyle = '#fff';
+        fxCtx.lineWidth = 1.5;
+        fxCtx.beginPath();
+        fxCtx.moveTo(12, 0); fxCtx.lineTo(-8, -8); fxCtx.lineTo(-8, 8); fxCtx.closePath();
+        fxCtx.fill(); fxCtx.stroke();
+        fxCtx.restore();
+
+        fxCtx.fillStyle = '#fca5a5';
+        fxCtx.fillText(`${Math.round(Math.hypot(dx, dy) / 10)}m`, px - Math.cos(ang) * 26, py - Math.sin(ang) * 26);
+    }
 }
 
 // ================= INDIKATOR MUSUH / KAWAN =================
