@@ -17,6 +17,10 @@ const METEOR_TYPES = [
 ];
 const PICKUP_MAX = 8;
 const PICKUP_DROP_CHANCE = 0.18;   // peluang musuh menjatuhkan pickup saat hancur (15-20%)
+const DROP_PITY = 4;              // drop terjamin setelah N kill musuh tanpa drop
+const METEOR_DROP_CHANCE = { 5: 0.03, 8: 0.06, 12: 0.12 };   // per radius meteor; hanya health/mag (anti-farming senjata)
+const SUPPLY_COOLDOWN = 20000;     // jeda supply darurat (ms)
+const SUPPLY_HULL = 0.35;          // supply health bila hull di bawah ini
 const DROP_WEIGHTS = { health: 25, mag: 20, laser: 17, homing: 17, multi: 15, life: 6 };
 const PICKUP_RADIUS = 8;
 const PICKUP_SEEK = 900;
@@ -203,6 +207,7 @@ let waveStartAt = 0;
 
 let score = 0, best = 0, bestBefore = 0;
 let comboCount = 0, comboUntil = 0;
+let killsSinceDrop = 0;
 try { best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) { /* abaikan */ }
 if (bestText) bestText.textContent = best;
 
@@ -886,7 +891,13 @@ class Ship {
                 addScore(pts);
                 floatText(mult > 1 ? `+${pts} x${mult}` : `+${pts}`, this.x, this.y + 22, COMBO_COLORS[mult - 1], mult >= 3);
             }
-            if (this.team !== PLAYER_TEAM && !this.noDrop && Math.random() < PICKUP_DROP_CHANCE) spawnPickup(this.x, this.y);
+            if (this.team !== PLAYER_TEAM && !this.noDrop) {
+                killsSinceDrop++;
+                if (killsSinceDrop >= DROP_PITY || Math.random() < PICKUP_DROP_CHANCE) {
+                    killsSinceDrop = 0;
+                    spawnPickup(this.x, this.y);
+                }
+            }
             this.remove();
             checkWaveProgress();
         }
@@ -1145,6 +1156,7 @@ function checkWaveProgress() {
         if (waveBanner) waveBanner.classList.remove('hidden');
 
         addScore(WAVE_BONUS * currentWave);
+        dropNearPlayer(rollDropType(), 120, 200);   // hadiah wave
         floatText(`BONUS WAVE +${WAVE_BONUS * currentWave}`, player.x, player.y + 50, '#c084fc', true);
         waveStartAt = gameTime + 3000;   // diproses di updateGame()
     }
@@ -1202,6 +1214,7 @@ function resetGame() {
     floaters.forEach(f => f.el.remove()); floaters.length = 0;
     spawnQueue.length = 0;
     threat.count = 0;
+    killsSinceDrop = 0; nextSupplyAt = 0;
 
     if (gameOverBox) gameOverBox.classList.add('hidden');
     gameStarted = true;
@@ -1279,6 +1292,7 @@ function updateMeteors() {
         }
         if (destroyed) {
             createExplosion(m.x, m.y, 12 + m.radius);
+            meteorDrop(m);
             if (m.el) m.el.remove(); meteors.splice(i, 1);
             continue;
         }
@@ -1351,6 +1365,7 @@ function updateBeams() {
                     hitObj.hp -= dmg;
                     if (hitObj.hp <= 0) {
                         createExplosion(hitObj.x, hitObj.y, 12 + hitObj.radius);
+                        meteorDrop(hitObj);
                         if (hitObj.el) hitObj.el.remove();
                         const mi = meteors.indexOf(hitObj);
                         if (mi >= 0) meteors.splice(mi, 1);
@@ -1559,19 +1574,51 @@ const PICKUP_TYPES = {
     homing: { color: '#f97316', icon: '<path d="M12 2l4 8-4-2-4 2 4-8zm0 8l3 12-3-2-3 2 3-12z" fill="#fff"/>' },
 };
 
-function rollDropType() {
-    let r = Math.random() * Object.values(DROP_WEIGHTS).reduce((a, b) => a + b, 0);
-    for (const [type, w] of Object.entries(DROP_WEIGHTS)) { if ((r -= w) < 0) return type; }
-    return 'health';
+// Bobot disesuaikan kebutuhan player: hull rendah -> health lebih sering, dst.
+function rollDropType(only = null) {
+    const w = { ...DROP_WEIGHTS };
+    if (!player.dead) {
+        if (player.hull < player.maxHp * 0.5) w.health *= 2.5;
+        if (player.mags < 2) w.mag *= 2.5;
+        if (player.lives < 2) w.life *= 2.5;
+    }
+    const entries = Object.entries(w).filter(([t]) => !only || only.includes(t));
+    let r = Math.random() * entries.reduce((s, [, v]) => s + v, 0);
+    for (const [type, v] of entries) { if ((r -= v) < 0) return type; }
+    return entries[0][0];
+}
+
+// Sumber pickup: kill musuh (+pity), meteor, hadiah wave, dan supply darurat
+function dropNearPlayer(type, minD = 140, maxD = 220) {
+    if (player.dead) return;
+    const a = Math.random() * Math.PI * 2, d = minD + Math.random() * (maxD - minD);
+    spawnPickup(player.x + Math.cos(a) * d, player.y + Math.sin(a) * d, type);
+}
+
+function meteorDrop(m) {
+    const ch = METEOR_DROP_CHANCE[m.radius] ?? (m.radius >= 12 ? 0.12 : m.radius >= 8 ? 0.06 : 0.03);
+    if (Math.random() < ch) spawnPickup(m.x, m.y, rollDropType(['health', 'mag']));
+}
+
+let nextSupplyAt = 0;
+function supplyCheck() {
+    if (player.dead || gameTime < nextSupplyAt) return;
+    let type = null;
+    if (player.hull < player.maxHp * SUPPLY_HULL && !pickups.some(k => k.type === 'health')) type = 'health';
+    else if (player.mags < 1 && !pickups.some(k => k.type === 'mag')) type = 'mag';
+    if (!type) return;
+    nextSupplyAt = gameTime + SUPPLY_COOLDOWN;
+    dropNearPlayer(type, 160, 240);
+    floatText(`SUPPLY DARURAT: ${type === 'health' ? 'HULL' : 'MAG'}`, player.x, player.y + 60, '#86efac', true);
 }
 
 // Pickup hanya muncul dari musuh yang hancur (x, y = posisi musuh)
-function spawnPickup(x, y) {
+function spawnPickup(x, y, forceType = null) {
     if (pickups.length >= PICKUP_MAX) {   // penuh: buang yang paling lama
         const old = pickups.shift();
         if (old.el) old.el.remove();
     }
-    const type = rollDropType();
+    const type = forceType || rollDropType();
     const c = PICKUP_TYPES[type];
     const el = document.createElement('div');
     el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;will-change:transform;width:${PICKUP_RADIUS * 2}px;height:${PICKUP_RADIUS * 2}px`;
@@ -1582,6 +1629,7 @@ function spawnPickup(x, y) {
 }
 
 function updatePickups() {
+    supplyCheck();
     const far = Math.hypot(window.innerWidth, window.innerHeight) * 1.8;
 
     for (let i = pickups.length - 1; i >= 0; i--) {
