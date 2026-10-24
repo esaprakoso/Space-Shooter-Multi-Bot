@@ -54,7 +54,9 @@
                 <p>• <span class="text-orange-400 font-bold">Tombol MISSILE (F)</span>: Tahan tombol untuk rentetan Rudal Pelacak</p>
                 <p>• <span class="text-emerald-400 font-bold">Tombol SPD</span>: Atur Kecepatan Kapal</p>
                 <p>• <span class="text-cyan-400 font-bold">Tombol SHIELD (E)</span>: Kebal Serangan 5s</p>
-                <p>• <span class="text-blue-400 font-bold">Tombol BACKUP (R)</span>: Panggil Bantuan</p>
+                <p>• <span class="text-blue-400 font-bold">Tombol BACKUP (R)</span>: Bantuan sesuai kebutuhan (Medic, Interceptor, Guardian, atau tempur)</p>
+                <p>• <span class="text-amber-400 font-bold">Tombol FLARE (G)</span>: Umpan pengalih misil, cooldown 8s</p>
+                <p>• <span class="text-orange-300 font-bold">⚠ MISIL</span>: Peringatan muncul saat misil musuh mengunci Anda</p>
             </div>
             <button id="start-btn" class="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm rounded-lg transition-all shadow-lg shadow-cyan-600/40 cursor-pointer uppercase tracking-wider touch-none select-none active:scale-95">
                 START MISSION
@@ -183,6 +185,11 @@
             SKOR <span id="score-count" class="text-white">0</span></div>
     </div>
 
+    <!-- PERINGATAN MISIL MASUK -->
+    <div id="missile-alert" class="hidden fixed top-24 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-lg border border-orange-500/70 bg-red-950/85 text-orange-300 text-[11px] font-bold animate-pulse whitespace-nowrap">
+        <span id="missile-alert-text"></span>
+    </div>
+
     <!-- COMBO & POWER-UP SPREAD AKTIF -->
     <div class="fixed top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 text-[11px] font-bold pointer-events-none">
         <div id="combo-box" class="hidden bg-gray-900/85 px-2.5 py-1 rounded-lg border border-yellow-500/50 backdrop-blur text-yellow-300 w-24">
@@ -220,6 +227,12 @@
                 <span id="backup-cd-text" class="text-[8px] text-blue-300">READY</span>
             </button>
         </div>
+
+        <button id="btn-flare" data-key="KeyG"
+            class="fixed bottom-24 left-48 z-40 touch-none select-none rounded-full border border-amber-400/50 bg-amber-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px]">
+            <span>FLARE</span>
+            <span id="flare-cd-text" class="text-[8px] text-amber-300">READY</span>
+        </button>
 
         <div class="fixed bottom-6 right-6 z-40 flex items-center gap-2.5">
             <div class="relative flex items-center">
