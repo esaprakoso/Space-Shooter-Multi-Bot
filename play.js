@@ -2,30 +2,31 @@
 const PLAYER_TEAM = 'blue';
 const INITIAL_LIVES = 3;
 const MAX_LIVES = 5;
-const W = 40, H = 48, RADIUS = 18, MASS = 25;
+// Ukuran Kapal Diperkecil (W:28, H:34, Radius:12) agar peta terasa jauh lebih luas
+const W = 28, H = 34, RADIUS = 12, MASS = 18;
 const MAX_FUEL = 100, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
-const MAX_METEORS = 20;
+const MAX_METEORS = 25;
 const BULLET_DAMAGE = 15;
 const BULLET_LIFE = 120;
 const BULLET_MASS = 2;
 const METEOR_MAX_SPEED = 5;
 const METEOR_TYPES = [
-    { r: 10, hp: 20 },
-    { r: 16, hp: 60 },
-    { r: 24, hp: 120 },
+    { r: 6, hp: 20 },
+    { r: 10, hp: 60 },
+    { r: 16, hp: 120 },
 ];
 const PICKUP_MAX = 8;
 const PICKUP_SPAWN_CHANCE = 0.008;
-const PICKUP_RADIUS = 14;
+const PICKUP_RADIUS = 10;
 const PICKUP_SEEK = 900;
 const HEAL_AMOUNT = 30;
 const MAG_AMOUNT = 1;
 const WEAPON_DURATION = 9000;
 const SHIELD_DURATION = 5000;
 const SHIELD_COOLDOWN = 15000;
-const AVOID_METEOR = 100;
-const AVOID_SHIP = 80;
+const AVOID_METEOR = 90;
+const AVOID_SHIP = 70;
 
 const TEAMS = {
     blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
@@ -33,9 +34,9 @@ const TEAMS = {
 };
 
 const BOT_TYPES = {
-    scout: { body: '#F43F5E', cockpit: '#FECDD3', rcs: '#FB7185', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 14, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
-    standard: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 18, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
-    heavy: { body: '#991B1B', cockpit: '#F87171', rcs: '#DC2626', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 24, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
+    scout: { body: '#F43F5E', cockpit: '#FECDD3', rcs: '#FB7185', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 10, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
+    standard: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 12, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
+    heavy: { body: '#991B1B', cockpit: '#F87171', rcs: '#DC2626', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 16, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
 };
 
 const ALLY_BOT_COLORS = {
@@ -69,8 +70,10 @@ const speedText = $('speed-text');
 const speedSliderBox = $('speed-slider-box');
 const speedSlider = $('speed-slider');
 const sliderValText = $('slider-val-text');
-const btnSwitch = $('btn-switch');
-const weaponText = $('weapon-text');
+const btnLaser = $('btn-laser');
+const laserTimerText = $('laser-timer-text');
+const btnHoming = $('btn-homing');
+const homingTimerText = $('homing-timer-text');
 const startScreen = $('start-screen');
 const startBtn = $('start-btn');
 
@@ -135,7 +138,7 @@ function createExplosion(cx, cy, count = 24) {
         const a = Math.random() * Math.PI * 2, sp = Math.random() * 7 + 2;
         particles.push({
             x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-            size: Math.random() * 5 + 2, op: 1,
+            size: Math.random() * 4 + 2, op: 1,
             color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
         });
     }
@@ -180,7 +183,6 @@ class Ship {
         this.team = team;
         this.isPlayer = isPlayer;
         this.botType = botType;
-        this.selectedWeapon = 'bullet'; // 'bullet', 'laser', 'homing'
         if (isPlayer) this.lives = INITIAL_LIVES;
 
         if (isPlayer) {
@@ -215,6 +217,8 @@ class Ship {
         this.lastJoyAngle = 0;
         this.shieldUntil = 0;
         this.shieldCdUntil = 0;
+        this.laserUntil = 0;
+        this.homingUntil = 0;
 
         this.buildPlane();
         if (!isPlayer) this.buildHud();
@@ -223,26 +227,23 @@ class Ship {
     buildPlane() {
         const c = this.c;
         const el = document.createElement('div');
-        el.className = 'fixed left-0 top-0 w-10 h-12 pointer-events-none z-10';
+        // Ukuran elemen kapal disesuaikan dengan WxH (28x34px)
+        el.className = 'fixed left-0 top-0 w-[28px] h-[34px] pointer-events-none z-10';
         el.style.willChange = 'transform';
-        // Gambar kapal presisi dengan efek nyala api Thrust dan RCS
         el.innerHTML = `
-        <div data-fx="shield-aura" class="absolute -inset-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
+        <div data-fx="shield-aura" class="absolute -inset-2 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_12px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
         <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
-             style="filter:drop-shadow(0 0 8px rgba(${c.glow},0.8))">
-            <!-- THRUSTER MAIN FLAME -->
+             style="filter:drop-shadow(0 0 6px rgba(${c.glow},0.8))">
             <g data-fx="thrust" style="display:none">
                 <path d="M14 38 L20 54 L26 38 Z" fill="#f97316"/>
                 <path d="M16 38 L20 48 L24 38 Z" fill="#facc15"/>
             </g>
-            <!-- RCS JETS -->
             <path data-fx="left" d="M4 36 L-6 40 L4 44 Z" fill="${c.rcs}" style="display:none"/>
             <path data-fx="right" d="M36 36 L46 40 L36 44 Z" fill="${c.rcs}" style="display:none"/>
             <g data-fx="rev" style="display:none">
                 <path d="M10 14 L2 4 L14 10 Z" fill="${c.rcs}"/>
                 <path d="M30 14 L38 4 L26 10 Z" fill="${c.rcs}"/>
             </g>
-            <!-- BODY -->
             <path d="M20 6 L36 42 L20 36 L4 42 Z" fill="${c.body}"/>
             <path d="M20 12 L25 26 L20 23 L15 26 Z" fill="${c.cockpit}"/>
         </svg>`;
@@ -255,12 +256,12 @@ class Ship {
 
     buildHud() {
         const hud = document.createElement('div');
-        hud.className = 'fixed left-0 top-0 w-14 z-20 pointer-events-none';
+        hud.className = 'fixed left-0 top-0 w-10 z-20 pointer-events-none';
         hud.innerHTML = `
-        <div class="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden border border-gray-700">
+        <div class="w-full bg-gray-800 h-1 rounded-full overflow-hidden border border-gray-700">
             <div class="h-full w-full transition-all duration-150" style="background:${this.c.body}"></div>
         </div>
-        <div class="w-full bg-gray-800 h-1 rounded-full overflow-hidden mt-0.5">
+        <div class="w-full bg-gray-800 h-0.5 rounded-full overflow-hidden mt-0.5">
             <div class="h-full w-full bg-yellow-400"></div>
         </div>`;
         document.body.appendChild(hud);
@@ -276,15 +277,13 @@ class Ship {
             mainEmpty: false, rcsEmpty: false,
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
             dead: false, invuln: false, lastShot: 0, joyHold: 0, lastJoyAngle: 0,
-            shieldUntil: 0, shieldCdUntil: 0,
-            selectedWeapon: 'bullet',
+            shieldUntil: 0, shieldCdUntil: 0, laserUntil: 0, homingUntil: 0,
             input: {}, fx: {},
         });
         if (this.el) {
             this.el.classList.remove('hidden');
             this.el.style.opacity = '1';
         }
-        if (this.isPlayer && weaponText) weaponText.textContent = 'BULLET';
     }
 
     activateShield() {
@@ -296,15 +295,6 @@ class Ship {
             return true;
         }
         return false;
-    }
-
-    cycleWeapon() {
-        const modes = ['bullet', 'laser', 'homing'];
-        let idx = modes.indexOf(this.selectedWeapon);
-        this.selectedWeapon = modes[(idx + 1) % modes.length];
-        if (this.isPlayer && weaponText) {
-            weaponText.textContent = this.selectedWeapon.toUpperCase();
-        }
     }
 
     readKeys() {
@@ -327,9 +317,14 @@ class Ship {
             keys.KeyR = false;
         }
 
-        if (k.KeyQ) {
-            this.cycleWeapon();
+        if (k.KeyQ && this.laserUntil && performance.now() < this.laserUntil) {
+            this.shoot('laser');
             keys.KeyQ = false;
+        }
+
+        if (k.KeyF && this.homingUntil && performance.now() < this.homingUntil) {
+            this.shoot('homing');
+            keys.KeyF = false;
         }
 
         // Virtual Joystick Logic
@@ -496,40 +491,43 @@ class Ship {
         }
     }
 
-    shoot() {
-        const mode = this.selectedWeapon;
-        const rad = (this.angle * Math.PI) / 180;
-        const spawnX = this.x + Math.sin(rad) * 18;
-        const spawnY = this.y + Math.cos(rad) * 18;
+    shoot(forceType = null) {
+        const now = performance.now();
+        const isLaser = forceType === 'laser' || (this.laserUntil && now < this.laserUntil);
+        const isHoming = forceType === 'homing' || (this.homingUntil && now < this.homingUntil);
 
-        if (mode === 'laser') {
+        const rad = (this.angle * Math.PI) / 180;
+        const spawnX = this.x + Math.sin(rad) * 13;
+        const spawnY = this.y + Math.cos(rad) * 13;
+
+        if (isLaser) {
             const vx = this.vx + 22 * Math.sin(rad);
             const vy = this.vy + 22 * Math.cos(rad);
             const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
 
             const el = document.createElement('div');
-            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:10px;height:32px;background:#c084fc;box-shadow:0 0 12px #c084fc`;
+            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:24px;background:#c084fc;box-shadow:0 0 10px #c084fc`;
             document.body.appendChild(el);
             bullets.push({
-                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: '#c084fc', trail: [],
+                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: '#c084fc',
                 x: spawnX, y: spawnY, vx, vy
             });
 
-        } else if (mode === 'homing') {
-            [-8, 8].forEach(offsetDeg => {
+        } else if (isHoming) {
+            [-6, 6].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const r = (ang * Math.PI) / 180;
-                const sx = this.x + Math.sin(r) * 18;
-                const sy = this.y + Math.cos(r) * 18;
+                const sx = this.x + Math.sin(r) * 13;
+                const sy = this.y + Math.cos(r) * 13;
                 const vx = this.vx + 12 * Math.sin(r);
                 const vy = this.vy + 12 * Math.cos(r);
                 const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
 
                 const el = document.createElement('div');
-                el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:14px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
+                el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:6px;height:12px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
                 document.body.appendChild(el);
                 bullets.push({
-                    el, owner: this, angle: bAngle, life: BULLET_LIFE * 1.3, damage: 22, homing: true, color: '#fb923c', trail: [],
+                    el, owner: this, angle: bAngle, life: BULLET_LIFE * 1.3, damage: 22, homing: true, color: '#fb923c',
                     x: sx, y: sy, vx, vy
                 });
             });
@@ -540,10 +538,10 @@ class Ship {
             const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
 
             const el = document.createElement('div');
-            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
+            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:6px;height:12px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
             document.body.appendChild(el);
             bullets.push({
-                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
+                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet,
                 x: spawnX, y: spawnY, vx, vy
             });
         }
@@ -604,14 +602,22 @@ class Ship {
     }
 
     apply(type) {
+        const now = performance.now();
         if (type === 'health') this.hull = Math.min(this.maxHp, this.hull + HEAL_AMOUNT);
         else if (type === 'mag') this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
         else if (type === 'life') {
             if (this.isPlayer) this.lives = Math.min(MAX_LIVES, this.lives + 1);
             createExplosion(this.x, this.y, 18);
-        } else if (type === 'multi' || type === 'laser' || type === 'homing') {
-            this.selectedWeapon = type === 'multi' ? 'bullet' : type;
-            if (this.isPlayer && weaponText) weaponText.textContent = this.selectedWeapon.toUpperCase();
+        } else if (type === 'laser') {
+            this.laserUntil = now + WEAPON_DURATION;
+            this.homingUntil = 0;
+            createExplosion(this.x, this.y, 16);
+        } else if (type === 'homing') {
+            this.homingUntil = now + WEAPON_DURATION;
+            this.laserUntil = 0;
+            createExplosion(this.x, this.y, 16);
+        } else if (type === 'multi') {
+            this.laserUntil = now + WEAPON_DURATION;
             createExplosion(this.x, this.y, 16);
         }
     }
@@ -639,8 +645,26 @@ class Ship {
 
         if (this.isPlayer) {
             const now = performance.now();
-            let weaponTag = ` [${this.selectedWeapon.toUpperCase()}]`;
-            let weaponColor = this.selectedWeapon === 'laser' ? '#c084fc' : this.selectedWeapon === 'homing' ? '#fb923c' : '#22d3ee';
+
+            // TOMBOL DEDIKASI LASER & MISSILE: Tampil hanya saat aktif
+            if (this.laserUntil && now < this.laserUntil) {
+                if (btnLaser) btnLaser.classList.remove('hidden');
+                if (laserTimerText) laserTimerText.textContent = `${Math.ceil((this.laserUntil - now) / 1000)}s`;
+            } else {
+                if (btnLaser) btnLaser.classList.add('hidden');
+            }
+
+            if (this.homingUntil && now < this.homingUntil) {
+                if (btnHoming) btnHoming.classList.remove('hidden');
+                if (homingTimerText) homingTimerText.textContent = `${Math.ceil((this.homingUntil - now) / 1000)}s`;
+            } else {
+                if (btnHoming) btnHoming.classList.add('hidden');
+            }
+
+            let weaponTag = '';
+            let weaponColor = '';
+            if (this.laserUntil && now < this.laserUntil) { weaponTag = ' [LASER]'; weaponColor = '#c084fc'; }
+            else if (this.homingUntil && now < this.homingUntil) { weaponTag = ' [MISSILE]'; weaponColor = '#fb923c'; }
 
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
             const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
@@ -653,7 +677,7 @@ class Ship {
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
             if (ammoBar) {
                 ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
-                ammoBar.style.background = weaponColor;
+                ammoBar.style.background = weaponColor || '';
             }
             setTxt(ammoText, `${ammoTxt}${weaponTag}`);
             setTxt($('hud-status-mini'), `${this.lives} NYAWA · ${Math.round(this.hull)}% HP`);
@@ -678,7 +702,7 @@ class Ship {
             }
 
         } else if (this.hud) {
-            this.hud.style.transform = `translate(${sx - 28}px, ${sy - H / 2 - 16}px)`;
+            this.hud.style.transform = `translate(${sx - 20}px, ${sy - H / 2 - 12}px)`;
             setW(this.hudBar, `${(this.hull / this.maxHp) * 100}%`);
             setW(this.hudAmmo, `${(this.ammo / this.p.magSize) * 100}%`);
             if (this.hudAmmo) this.hudAmmo.style.opacity = this.reloadUntil ? '0.4' : '1';
@@ -849,14 +873,10 @@ function updateMeteors() {
     }
 }
 
-// ================= PELURU & JEJAK PELURU (BULLET TRAIL) =================
+// ================= PELURU (TANPA BULLET TRAIL) =================
 function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
-
-        if (!b.trail) b.trail = [];
-        b.trail.push({ x: b.x, y: b.y });
-        if (b.trail.length > 8) b.trail.shift();
 
         if (b.homing) {
             let target = null, minDist = 800;
@@ -885,9 +905,9 @@ function updateBullets() {
 
         const sx = b.x - cam.x;
         const sy = window.innerHeight - (b.y - cam.y);
-        if (b.el) b.el.style.transform = `translate(${sx - 4}px, ${sy - 8}px) rotate(${b.angle}deg)`;
+        if (b.el) b.el.style.transform = `translate(${sx - 3}px, ${sy - 6}px) rotate(${b.angle}deg)`;
 
-        const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
+        const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 5);
         const out = --b.life <= 0;
 
         if (target || out) {
@@ -1047,32 +1067,6 @@ function updateEffects() {
         fxCtx.fillRect(p.x - cam.x - p.size / 2, h - (p.y - cam.y) - p.size / 2, p.size, p.size);
     }
 
-    // Render Jejak Peluru (Bullet Trails)
-    bullets.forEach(b => {
-        if (!b.trail || b.trail.length < 2) return;
-        fxCtx.save();
-        fxCtx.strokeStyle = b.color || '#22d3ee';
-        fxCtx.lineWidth = 2.5;
-        fxCtx.lineCap = 'round';
-        fxCtx.shadowColor = b.color || '#22d3ee';
-        fxCtx.shadowBlur = 6;
-
-        fxCtx.beginPath();
-        b.trail.forEach((pt, idx) => {
-            const sx = pt.x - cam.x;
-            const sy = h - (pt.y - cam.y);
-            if (idx === 0) fxCtx.moveTo(sx, sy);
-            else fxCtx.lineTo(sx, sy);
-        });
-        const currentSx = b.x - cam.x;
-        const currentSy = h - (b.y - cam.y);
-        fxCtx.lineTo(currentSx, currentSy);
-
-        fxCtx.globalAlpha = 0.65;
-        fxCtx.stroke();
-        fxCtx.restore();
-    });
-
     fxCtx.globalAlpha = 1;
     drawShipIndicators();
 }
@@ -1102,12 +1096,12 @@ function drawShipIndicators() {
         fxCtx.strokeStyle = '#fff';
         fxCtx.lineWidth = 1.5;
         fxCtx.beginPath();
-        fxCtx.moveTo(12, 0); fxCtx.lineTo(-8, -8); fxCtx.lineTo(-8, 8); fxCtx.closePath();
+        fxCtx.moveTo(10, 0); fxCtx.lineTo(-6, -6); fxCtx.lineTo(-6, 6); fxCtx.closePath();
         fxCtx.fill(); fxCtx.stroke();
         fxCtx.restore();
 
         fxCtx.fillStyle = isAlly ? '#93c5fd' : '#fca5a5';
-        fxCtx.fillText(`${Math.round(Math.hypot(dx, dy) / 10)}m`, px - Math.cos(ang) * 26, py - Math.sin(ang) * 26);
+        fxCtx.fillText(`${Math.round(Math.hypot(dx, dy) / 10)}m`, px - Math.cos(ang) * 24, py - Math.sin(ang) * 24);
     }
 }
 
@@ -1137,7 +1131,8 @@ window.addEventListener('keydown', (e) => {
     if (!isPaused) {
         if (e.code === 'KeyE' && player) player.activateShield();
         if (e.code === 'KeyR') requestBackup();
-        if (e.code === 'KeyQ' && player) player.cycleWeapon();
+        if (e.code === 'KeyQ' && player && player.laserUntil && performance.now() < player.laserUntil) player.shoot('laser');
+        if (e.code === 'KeyF' && player && player.homingUntil && performance.now() < player.homingUntil) player.shoot('homing');
     }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1151,7 +1146,6 @@ document.querySelectorAll('[data-key]').forEach(btn => {
         if (v && !isPaused) {
             if (code === 'KeyE' && player) player.activateShield();
             if (code === 'KeyR') requestBackup();
-            if (code === 'KeyQ' && player) player.cycleWeapon();
         }
     };
     btn.addEventListener('pointerdown', (e) => { btn.setPointerCapture(e.pointerId); set(true)(e); });
@@ -1165,8 +1159,17 @@ if (btnShield) {
 if (btnBackup) {
     btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!isPaused) requestBackup(); });
 }
-if (btnSwitch) {
-    btnSwitch.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player && !isPaused) player.cycleWeapon(); });
+if (btnLaser) {
+    btnLaser.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (player && !isPaused && player.laserUntil && performance.now() < player.laserUntil) player.shoot('laser');
+    });
+}
+if (btnHoming) {
+    btnHoming.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (player && !isPaused && player.homingUntil && performance.now() < player.homingUntil) player.shoot('homing');
+    });
 }
 
 // LOGIKA SLIDER KECEPATAN
