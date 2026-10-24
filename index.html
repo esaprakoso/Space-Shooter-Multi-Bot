@@ -49,9 +49,9 @@
             <h1 class="text-2xl font-black text-cyan-400 tracking-wider uppercase">Space Shooter</h1>
             <div class="text-xs text-gray-300 space-y-1.5 text-left bg-gray-950/60 p-3 rounded-lg border border-gray-800">
                 <p>• <span class="text-red-400 font-bold">Sistem Nyawa</span>: Memiliki 3x kesempatan hidup</p>
-                <p>• <span class="text-yellow-400 font-bold">1 Magazine</span>: 100 Peluru</p>
-                <p>• <span class="text-purple-400 font-bold">Item LASER</span>: Tombol Laser aktif otomatis saat diambil</p>
-                <p>• <span class="text-orange-400 font-bold">Item MISSILE</span>: Tombol Rudal Pelacak aktif otomatis saat diambil</p>
+                <p>• <span class="text-yellow-400 font-bold">1 Magazine</span>: 100 Peluru Standar</p>
+                <p>• <span class="text-purple-400 font-bold">Tombol LASER (Q)</span>: Muncul saat item Laser aktif</p>
+                <p>• <span class="text-orange-400 font-bold">Tombol MISSILE (F)</span>: Muncul saat item Rudal aktif</p>
                 <p>• <span class="text-emerald-400 font-bold">Tombol SPD</span>: Atur Kecepatan Kapal</p>
                 <p>• <span class="text-cyan-400 font-bold">Tombol SHIELD (E)</span>: Kebal Serangan 5s</p>
                 <p>• <span class="text-blue-400 font-bold">Tombol BACKUP (R)</span>: Panggil Bantuan</p>
@@ -83,7 +83,6 @@
     <!-- HUD PLAYER 1 (POJOK KANAN ATAS) -->
     <div class="fixed top-3 right-3 w-48 sm:w-60 z-20 space-y-2">
         <div id="hud-panel" class="bg-gray-900/90 p-2.5 rounded-lg border border-gray-800 backdrop-blur shadow-lg">
-            <!-- Mini Bar Header -->
             <div id="hud-toggle" class="flex justify-between items-center cursor-pointer select-none">
                 <div class="overflow-hidden">
                     <p class="text-blue-400 font-bold text-[11px] uppercase tracking-wide">PLAYER 1 (BIRU)</p>
@@ -92,7 +91,6 @@
                 <span id="hud-arrow" class="text-xs text-gray-400 ml-1 transition-transform duration-200">▼</span>
             </div>
 
-            <!-- Detail HUD -->
             <div id="hud-details" class="hidden space-y-2 pt-2.5 mt-2 border-t border-gray-800/80">
                 <div>
                     <div class="flex justify-between text-[10px] font-bold mb-1">
@@ -121,7 +119,6 @@
             </div>
         </div>
 
-        <!-- RESTART WIDGET -->
         <div id="game-over-box"
             class="hidden bg-red-950/90 border border-red-500/60 p-3 rounded-lg backdrop-blur text-center space-y-2 shadow-lg shadow-red-900/40">
             <div id="status-title"
@@ -159,7 +156,7 @@
             </div>
         </div>
 
-        <!-- Tombol Tambahan di Kiri (THRUST, SHIELD & BACKUP) -->
+        <!-- Tombol Kiri (THRUST, SHIELD & BACKUP) -->
         <div class="fixed bottom-6 left-48 z-40 flex items-center gap-2">
             <button data-key="ArrowUp"
                 class="touch-none select-none rounded-full border border-orange-400/50 bg-orange-600/30 text-white font-bold flex items-center justify-center w-14 h-14 text-[10px]">THRUST</button>
@@ -175,9 +172,9 @@
             </button>
         </div>
 
-        <!-- Tombol Kanan (SPEED CONTROL, DEDICATED WEAPONS & FIRE) -->
+        <!-- Tombol Kanan (SPEED, DEDICATED WEAPONS & FIRE) -->
         <div class="fixed bottom-6 right-6 z-40 flex items-center gap-2.5">
-            <!-- SPEED CONTROL & POPUP SLIDER -->
+            <!-- SPEED CONTROL -->
             <div class="relative flex items-center">
                 <div id="speed-slider-box" class="hidden absolute bottom-16 right-0 bg-gray-900/95 border border-emerald-500/50 p-2.5 rounded-xl backdrop-blur-md shadow-2xl flex flex-col items-center gap-1.5 w-36 z-50">
                     <div class="flex justify-between w-full text-[9px] font-bold text-emerald-400">
@@ -195,15 +192,15 @@
                 </button>
             </div>
 
-            <!-- TOMBOL LASER (MUNCUL HANYA SAAT DURA/ITEM AKTIF) -->
-            <button id="btn-laser" data-key="KeyQ"
+            <!-- TOMBOL TERPISAH LASER (MUNCUL JIKA AKTIF, EXPIRED LANGSUNG HILANG) -->
+            <button id="btn-laser"
                 class="hidden touch-none select-none rounded-full border border-purple-400/80 bg-purple-600/40 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px] active:scale-95 shadow-[0_0_12px_rgba(168,85,247,0.6)] animate-pulse">
                 <span>LASER</span>
                 <span id="laser-timer-text" class="text-[8px] text-purple-300">0s</span>
             </button>
 
-            <!-- TOMBOL MISSILE (MUNCUL HANYA SAAT DURA/ITEM AKTIF) -->
-            <button id="btn-homing" data-key="KeyF"
+            <!-- TOMBOL TERPISAH MISSILE (MUNCUL JIKA AKTIF, EXPIRED LANGSUNG HILANG) -->
+            <button id="btn-homing"
                 class="hidden touch-none select-none rounded-full border border-orange-400/80 bg-orange-600/40 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px] active:scale-95 shadow-[0_0_12px_rgba(249,115,22,0.6)] animate-pulse">
                 <span>MISSILE</span>
                 <span id="homing-timer-text" class="text-[8px] text-orange-300">0s</span>

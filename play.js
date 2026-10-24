@@ -2,8 +2,8 @@
 const PLAYER_TEAM = 'blue';
 const INITIAL_LIVES = 3;
 const MAX_LIVES = 5;
-// Ukuran Kapal Diperkecil (W:28, H:34, Radius:12) agar peta terasa jauh lebih luas
-const W = 28, H = 34, RADIUS = 12, MASS = 18;
+// Ukuran Kapal Diperkecil (W:22, H:28, Radius:9) agar arena terkesan jauh lebih luas
+const W = 22, H = 28, RADIUS = 9, MASS = 15;
 const MAX_FUEL = 100, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
 const MAX_METEORS = 25;
@@ -12,13 +12,13 @@ const BULLET_LIFE = 120;
 const BULLET_MASS = 2;
 const METEOR_MAX_SPEED = 5;
 const METEOR_TYPES = [
-    { r: 6, hp: 20 },
-    { r: 10, hp: 60 },
-    { r: 16, hp: 120 },
+    { r: 5, hp: 20 },
+    { r: 8, hp: 60 },
+    { r: 12, hp: 120 },
 ];
 const PICKUP_MAX = 8;
 const PICKUP_SPAWN_CHANCE = 0.008;
-const PICKUP_RADIUS = 10;
+const PICKUP_RADIUS = 8;
 const PICKUP_SEEK = 900;
 const HEAL_AMOUNT = 30;
 const MAG_AMOUNT = 1;
@@ -34,9 +34,9 @@ const TEAMS = {
 };
 
 const BOT_TYPES = {
-    scout: { body: '#F43F5E', cockpit: '#FECDD3', rcs: '#FB7185', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 10, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
-    standard: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 12, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
-    heavy: { body: '#991B1B', cockpit: '#F87171', rcs: '#DC2626', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 16, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
+    scout: { body: '#F43F5E', cockpit: '#FECDD3', rcs: '#FB7185', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 8, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
+    standard: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 10, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
+    heavy: { body: '#991B1B', cockpit: '#F87171', rcs: '#DC2626', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 14, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
 };
 
 const ALLY_BOT_COLORS = {
@@ -101,6 +101,7 @@ let currentWave = 1;
 let waveState = 'PLAYING';
 let backupCdUntil = 0;
 let playerSpeedFactor = 1.0;
+let lastSpecialShotTime = 0;
 
 // ================= UTIL =================
 function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; } }
@@ -138,7 +139,7 @@ function createExplosion(cx, cy, count = 24) {
         const a = Math.random() * Math.PI * 2, sp = Math.random() * 7 + 2;
         particles.push({
             x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-            size: Math.random() * 4 + 2, op: 1,
+            size: Math.random() * 3 + 1.5, op: 1,
             color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
         });
     }
@@ -227,12 +228,12 @@ class Ship {
     buildPlane() {
         const c = this.c;
         const el = document.createElement('div');
-        // Ukuran elemen kapal disesuaikan dengan WxH (28x34px)
-        el.className = 'fixed left-0 top-0 w-[28px] h-[34px] pointer-events-none z-10';
+        el.className = 'fixed left-0 top-0 w-[22px] h-[28px] pointer-events-none z-10';
         el.style.willChange = 'transform';
+        // overflow-visible ditambahkan agar semburan api Thruster (Y=52) & RCS (X=-5/45) tidak terpotong oleh SVG
         el.innerHTML = `
         <div data-fx="shield-aura" class="absolute -inset-2 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_12px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
-        <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
+        <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full overflow-visible"
              style="filter:drop-shadow(0 0 6px rgba(${c.glow},0.8))">
             <g data-fx="thrust" style="display:none">
                 <path d="M14 38 L20 54 L26 38 Z" fill="#f97316"/>
@@ -256,7 +257,7 @@ class Ship {
 
     buildHud() {
         const hud = document.createElement('div');
-        hud.className = 'fixed left-0 top-0 w-10 z-20 pointer-events-none';
+        hud.className = 'fixed left-0 top-0 w-8 z-20 pointer-events-none';
         hud.innerHTML = `
         <div class="w-full bg-gray-800 h-1 rounded-full overflow-hidden border border-gray-700">
             <div class="h-full w-full transition-all duration-150" style="background:${this.c.body}"></div>
@@ -318,12 +319,12 @@ class Ship {
         }
 
         if (k.KeyQ && this.laserUntil && performance.now() < this.laserUntil) {
-            this.shoot('laser');
+            this.shootSpecial('laser');
             keys.KeyQ = false;
         }
 
         if (k.KeyF && this.homingUntil && performance.now() < this.homingUntil) {
-            this.shoot('homing');
+            this.shootSpecial('homing');
             keys.KeyF = false;
         }
 
@@ -485,64 +486,68 @@ class Ship {
         if (!this.reloadUntil && this.ammo < 1 && this.mags > 0) this.reloadUntil = ts + p.reload;
 
         if (i.shoot && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
-            this.shoot();
+            this.shootStandard();
             this.ammo -= 1;
             this.lastShot = ts;
         }
     }
 
-    shoot(forceType = null) {
+    shootStandard() {
+        const rad = (this.angle * Math.PI) / 180;
+        const spawnX = this.x + Math.sin(rad) * 12;
+        const spawnY = this.y + Math.cos(rad) * 12;
+        const vx = this.vx + 14 * Math.sin(rad);
+        const vy = this.vy + 14 * Math.cos(rad);
+        const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
+
+        const el = document.createElement('div');
+        el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:5px;height:10px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
+        document.body.appendChild(el);
+        bullets.push({
+            el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet,
+            x: spawnX, y: spawnY, vx, vy
+        });
+    }
+
+    shootSpecial(type) {
         const now = performance.now();
-        const isLaser = forceType === 'laser' || (this.laserUntil && now < this.laserUntil);
-        const isHoming = forceType === 'homing' || (this.homingUntil && now < this.homingUntil);
+        if (now - lastSpecialShotTime < 180) return;
+        lastSpecialShotTime = now;
 
         const rad = (this.angle * Math.PI) / 180;
-        const spawnX = this.x + Math.sin(rad) * 13;
-        const spawnY = this.y + Math.cos(rad) * 13;
+        const spawnX = this.x + Math.sin(rad) * 12;
+        const spawnY = this.y + Math.cos(rad) * 12;
 
-        if (isLaser) {
+        if (type === 'laser' && this.laserUntil && now < this.laserUntil) {
             const vx = this.vx + 22 * Math.sin(rad);
             const vy = this.vy + 22 * Math.cos(rad);
             const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
 
             const el = document.createElement('div');
-            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:24px;background:#c084fc;box-shadow:0 0 10px #c084fc`;
+            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:6px;height:22px;background:#c084fc;box-shadow:0 0 10px #c084fc`;
             document.body.appendChild(el);
             bullets.push({
                 el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: '#c084fc',
                 x: spawnX, y: spawnY, vx, vy
             });
 
-        } else if (isHoming) {
+        } else if (type === 'homing' && this.homingUntil && now < this.homingUntil) {
             [-6, 6].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const r = (ang * Math.PI) / 180;
-                const sx = this.x + Math.sin(r) * 13;
-                const sy = this.y + Math.cos(r) * 13;
+                const sx = this.x + Math.sin(r) * 12;
+                const sy = this.y + Math.cos(r) * 12;
                 const vx = this.vx + 12 * Math.sin(r);
                 const vy = this.vy + 12 * Math.cos(r);
                 const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
 
                 const el = document.createElement('div');
-                el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:6px;height:12px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
+                el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:5px;height:10px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
                 document.body.appendChild(el);
                 bullets.push({
                     el, owner: this, angle: bAngle, life: BULLET_LIFE * 1.3, damage: 22, homing: true, color: '#fb923c',
                     x: sx, y: sy, vx, vy
                 });
-            });
-
-        } else {
-            const vx = this.vx + 14 * Math.sin(rad);
-            const vy = this.vy + 14 * Math.cos(rad);
-            const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
-
-            const el = document.createElement('div');
-            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:6px;height:12px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
-            document.body.appendChild(el);
-            bullets.push({
-                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet,
-                x: spawnX, y: spawnY, vx, vy
             });
         }
     }
@@ -646,7 +651,7 @@ class Ship {
         if (this.isPlayer) {
             const now = performance.now();
 
-            // TOMBOL DEDIKASI LASER & MISSILE: Tampil hanya saat aktif
+            // TOMBOL TERPISAH LASER & MISSILE: Tampil hanya jika aktif, expired langsung hilang
             if (this.laserUntil && now < this.laserUntil) {
                 if (btnLaser) btnLaser.classList.remove('hidden');
                 if (laserTimerText) laserTimerText.textContent = `${Math.ceil((this.laserUntil - now) / 1000)}s`;
@@ -661,11 +666,6 @@ class Ship {
                 if (btnHoming) btnHoming.classList.add('hidden');
             }
 
-            let weaponTag = '';
-            let weaponColor = '';
-            if (this.laserUntil && now < this.laserUntil) { weaponTag = ' [LASER]'; weaponColor = '#c084fc'; }
-            else if (this.homingUntil && now < this.homingUntil) { weaponTag = ' [MISSILE]'; weaponColor = '#fb923c'; }
-
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
             const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
 
@@ -675,11 +675,8 @@ class Ship {
             setTxt(hullText, `${Math.round(this.hull)}%`);
 
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
-            if (ammoBar) {
-                ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
-                ammoBar.style.background = weaponColor || '';
-            }
-            setTxt(ammoText, `${ammoTxt}${weaponTag}`);
+            if (ammoBar) ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
+            setTxt(ammoText, ammoTxt);
             setTxt($('hud-status-mini'), `${this.lives} NYAWA · ${Math.round(this.hull)}% HP`);
 
             if (now < this.shieldUntil) {
@@ -702,7 +699,7 @@ class Ship {
             }
 
         } else if (this.hud) {
-            this.hud.style.transform = `translate(${sx - 20}px, ${sy - H / 2 - 12}px)`;
+            this.hud.style.transform = `translate(${sx - 16}px, ${sy - H / 2 - 10}px)`;
             setW(this.hudBar, `${(this.hull / this.maxHp) * 100}%`);
             setW(this.hudAmmo, `${(this.ammo / this.p.magSize) * 100}%`);
             if (this.hudAmmo) this.hudAmmo.style.opacity = this.reloadUntil ? '0.4' : '1';
@@ -846,7 +843,7 @@ function updateMeteors() {
         let destroyed = false;
         for (let bi = bullets.length - 1; bi >= 0; bi--) {
             const b = bullets[bi];
-            if (Math.hypot(b.x - m.x, b.y - m.y) >= m.radius + 5) continue;
+            if (Math.hypot(b.x - m.x, b.y - m.y) >= m.radius + 4) continue;
 
             m.vx += (BULLET_MASS * (b.vx - m.vx)) / m.mass;
             m.vy += (BULLET_MASS * (b.vy - m.vy)) / m.mass;
@@ -905,9 +902,9 @@ function updateBullets() {
 
         const sx = b.x - cam.x;
         const sy = window.innerHeight - (b.y - cam.y);
-        if (b.el) b.el.style.transform = `translate(${sx - 3}px, ${sy - 6}px) rotate(${b.angle}deg)`;
+        if (b.el) b.el.style.transform = `translate(${sx - 2.5}px, ${sy - 5}px) rotate(${b.angle}deg)`;
 
-        const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 5);
+        const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 4);
         const out = --b.life <= 0;
 
         if (target || out) {
@@ -929,7 +926,7 @@ const PICKUP_TYPES = {
 
 function spawnPickup() {
     if (pickups.length >= PICKUP_MAX) return;
-    const types = ['health', 'mag', 'life', 'multi', 'laser', 'homing'];
+    const types = ['health', 'mag', 'life', 'laser', 'homing'];
     const type = types[Math.floor(Math.random() * types.length)];
     const c = PICKUP_TYPES[type];
     const el = document.createElement('div');
@@ -1096,12 +1093,12 @@ function drawShipIndicators() {
         fxCtx.strokeStyle = '#fff';
         fxCtx.lineWidth = 1.5;
         fxCtx.beginPath();
-        fxCtx.moveTo(10, 0); fxCtx.lineTo(-6, -6); fxCtx.lineTo(-6, 6); fxCtx.closePath();
+        fxCtx.moveTo(8, 0); fxCtx.lineTo(-5, -5); fxCtx.lineTo(-5, 5); fxCtx.closePath();
         fxCtx.fill(); fxCtx.stroke();
         fxCtx.restore();
 
         fxCtx.fillStyle = isAlly ? '#93c5fd' : '#fca5a5';
-        fxCtx.fillText(`${Math.round(Math.hypot(dx, dy) / 10)}m`, px - Math.cos(ang) * 24, py - Math.sin(ang) * 24);
+        fxCtx.fillText(`${Math.round(Math.hypot(dx, dy) / 10)}m`, px - Math.cos(ang) * 22, py - Math.sin(ang) * 22);
     }
 }
 
@@ -1131,8 +1128,8 @@ window.addEventListener('keydown', (e) => {
     if (!isPaused) {
         if (e.code === 'KeyE' && player) player.activateShield();
         if (e.code === 'KeyR') requestBackup();
-        if (e.code === 'KeyQ' && player && player.laserUntil && performance.now() < player.laserUntil) player.shoot('laser');
-        if (e.code === 'KeyF' && player && player.homingUntil && performance.now() < player.homingUntil) player.shoot('homing');
+        if (e.code === 'KeyQ' && player) player.shootSpecial('laser');
+        if (e.code === 'KeyF' && player) player.shootSpecial('homing');
     }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1162,13 +1159,13 @@ if (btnBackup) {
 if (btnLaser) {
     btnLaser.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (player && !isPaused && player.laserUntil && performance.now() < player.laserUntil) player.shoot('laser');
+        if (player && !isPaused) player.shootSpecial('laser');
     });
 }
 if (btnHoming) {
     btnHoming.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (player && !isPaused && player.homingUntil && performance.now() < player.homingUntil) player.shoot('homing');
+        if (player && !isPaused) player.shootSpecial('homing');
     });
 }
 
