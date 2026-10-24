@@ -28,20 +28,20 @@ const AVOID_METEOR = 80;
 const AVOID_SHIP = 60;
 
 const TEAMS = {
-    blue: { body: '#3B82F6', cockpit: '#93C5FD', glow: '59,130,246', bullet: '#22d3ee' },
-    red: { body: '#EF4444', cockpit: '#FCA5A5', glow: '239,68,68', bullet: '#f87171' },
+    blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
+    red: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171' },
 };
 
 const BOT_TYPES = {
-    scout: { body: '#F43F5E', cockpit: '#FECDD3', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 14, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
-    standard: { body: '#EF4444', cockpit: '#FCA5A5', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 18, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
-    heavy: { body: '#991B1B', cockpit: '#F87171', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 24, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
+    scout: { body: '#F43F5E', cockpit: '#FECDD3', rcs: '#FB7185', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 14, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
+    standard: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 18, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
+    heavy: { body: '#991B1B', cockpit: '#F87171', rcs: '#DC2626', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 24, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
 };
 
 const ALLY_BOT_COLORS = {
-    scout: { body: '#38BDF8', cockpit: '#BAE6FD', glow: '56,189,248', bullet: '#38bdf8' },
-    standard: { body: '#3B82F6', cockpit: '#93C5FD', glow: '59,130,246', bullet: '#22d3ee' },
-    heavy: { body: '#1D4ED8', cockpit: '#93C5FD', glow: '29,78,216', bullet: '#60a5fa' },
+    scout: { body: '#38BDF8', cockpit: '#BAE6FD', rcs: '#0284C7', glow: '56,189,248', bullet: '#38bdf8' },
+    standard: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
+    heavy: { body: '#1D4ED8', cockpit: '#93C5FD', rcs: '#2563EB', glow: '29,78,216', bullet: '#60a5fa' },
 };
 
 const STATS = {
@@ -188,6 +188,7 @@ class Ship {
             this.c = {
                 body: BOT_TYPES[botType].body,
                 cockpit: BOT_TYPES[botType].cockpit,
+                rcs: BOT_TYPES[botType].rcs,
                 glow: BOT_TYPES[botType].glow,
                 bullet: BOT_TYPES[botType].bullet,
             };
@@ -224,10 +225,18 @@ class Ship {
         const el = document.createElement('div');
         el.className = 'fixed left-0 top-0 w-10 h-12 pointer-events-none z-10';
         el.style.willChange = 'transform';
+        // Gambar kapal lengkap dengan elemen visual Thrust & RCS
         el.innerHTML = `
         <div data-fx="shield-aura" class="absolute -inset-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
         <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
              style="filter:drop-shadow(0 0 8px rgba(${c.glow},0.8))">
+            <path data-fx="thrust" d="M15 38 L20 48 L25 38 Z" fill="#F97316" style="display:none"/>
+            <path data-fx="left" d="M4 36 L-2 40 L4 44 Z" fill="${c.rcs}" style="display:none"/>
+            <path data-fx="right" d="M36 36 L42 40 L36 44 Z" fill="${c.rcs}" style="display:none"/>
+            <g data-fx="rev" style="display:none">
+                <path d="M10 16 L4 10 L14 12 Z" fill="${c.rcs}"/>
+                <path d="M30 16 L36 10 L26 12 Z" fill="${c.rcs}"/>
+            </g>
             <path d="M20 6 L36 42 L20 36 L4 42 Z" fill="${c.body}"/>
             <path d="M20 12 L25 26 L20 23 L15 26 Z" fill="${c.cockpit}"/>
         </svg>`;
@@ -446,7 +455,7 @@ class Ship {
         }
 
         const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
-        this.fx = { 'shield-aura': isShieldActive };
+        this.fx = { left, right, rev, thrust, 'shield-aura': isShieldActive };
 
         this.vAngle *= ANG_FRICTION;
         this.angle += this.vAngle;
@@ -476,13 +485,16 @@ class Ship {
         const spawnY = this.y + Math.cos(rad) * 18;
 
         if (isLaser) {
+            const vx = this.vx + 22 * Math.sin(rad);
+            const vy = this.vy + 22 * Math.cos(rad);
+            const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
+
             const el = document.createElement('div');
             el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:10px;height:32px;background:#c084fc;box-shadow:0 0 12px #c084fc`;
             document.body.appendChild(el);
             bullets.push({
-                el, owner: this, angle: this.angle, life: BULLET_LIFE, damage: 35, color: '#c084fc', trail: [],
-                x: spawnX, y: spawnY,
-                vx: this.vx + 22 * Math.sin(rad), vy: this.vy + 22 * Math.cos(rad),
+                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: '#c084fc', trail: [],
+                x: spawnX, y: spawnY, vx, vy
             });
 
         } else if (isHoming) {
@@ -491,13 +503,16 @@ class Ship {
                 const r = (ang * Math.PI) / 180;
                 const sx = this.x + Math.sin(r) * 18;
                 const sy = this.y + Math.cos(r) * 18;
+                const vx = this.vx + 12 * Math.sin(r);
+                const vy = this.vy + 12 * Math.cos(r);
+                const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
+
                 const el = document.createElement('div');
                 el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:14px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
                 document.body.appendChild(el);
                 bullets.push({
-                    el, owner: this, angle: ang, life: BULLET_LIFE * 1.2, damage: 22, homing: true, color: '#fb923c', trail: [],
-                    x: sx, y: sy,
-                    vx: this.vx + 12 * Math.sin(r), vy: this.vy + 12 * Math.cos(r),
+                    el, owner: this, angle: bAngle, life: BULLET_LIFE * 1.2, damage: 22, homing: true, color: '#fb923c', trail: [],
+                    x: sx, y: sy, vx, vy
                 });
             });
 
@@ -506,24 +521,30 @@ class Ship {
                 const r = (ang * Math.PI) / 180;
                 const sx = this.x + Math.sin(r) * 18;
                 const sy = this.y + Math.cos(r) * 18;
+                const vx = this.vx + 14 * Math.sin(r);
+                const vy = this.vy + 14 * Math.cos(r);
+                const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
+
                 const el = document.createElement('div');
                 el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
                 document.body.appendChild(el);
                 bullets.push({
-                    el, owner: this, angle: ang, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
-                    x: sx, y: sy,
-                    vx: this.vx + 14 * Math.sin(r), vy: this.vy + 14 * Math.cos(r),
+                    el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
+                    x: sx, y: sy, vx, vy
                 });
             });
 
         } else {
+            const vx = this.vx + 14 * Math.sin(rad);
+            const vy = this.vy + 14 * Math.cos(rad);
+            const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
+
             const el = document.createElement('div');
             el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
             document.body.appendChild(el);
             bullets.push({
-                el, owner: this, angle: this.angle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
-                x: spawnX, y: spawnY,
-                vx: this.vx + 14 * Math.sin(rad), vy: this.vy + 14 * Math.cos(rad),
+                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
+                x: spawnX, y: spawnY, vx, vy
             });
         }
     }
@@ -852,7 +873,7 @@ function updateBullets() {
 
         if (!b.trail) b.trail = [];
         b.trail.push({ x: b.x, y: b.y });
-        if (b.trail.length > 6) b.trail.shift();
+        if (b.trail.length > 8) b.trail.shift();
 
         if (b.homing) {
             let target = null, minDist = 600;
