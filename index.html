@@ -50,9 +50,8 @@
             <div class="text-xs text-gray-300 space-y-1.5 text-left bg-gray-950/60 p-3 rounded-lg border border-gray-800">
                 <p>• <span class="text-red-400 font-bold">Sistem Nyawa</span>: Memiliki 3x kesempatan hidup</p>
                 <p>• <span class="text-yellow-400 font-bold">1 Magazine</span>: 100 Peluru</p>
-                <p>• <span class="text-emerald-400 font-bold">Speed Slider</span>: Sentuh tombol SPD di kanan untuk atur kecepatan</p>
-                <p>• <span class="text-purple-400 font-bold">Item LASER</span>: Tembakan Sinar Tembus</p>
-                <p>• <span class="text-orange-400 font-bold">Item HOMING</span>: Rudal Pelacak Otomatis</p>
+                <p>• <span class="text-purple-400 font-bold">Tombol SWT (Q)</span>: Ganti Senjata (Bullet/Laser/Homing)</p>
+                <p>• <span class="text-emerald-400 font-bold">Tombol SPD</span>: Atur Kecepatan Kapal</p>
                 <p>• <span class="text-cyan-400 font-bold">Tombol SHIELD (E)</span>: Kebal Serangan 5s</p>
                 <p>• <span class="text-blue-400 font-bold">Tombol BACKUP (R)</span>: Panggil Bantuan</p>
             </div>
@@ -175,11 +174,10 @@
             </button>
         </div>
 
-        <!-- Tombol Kanan (SPEED CONTROL & FIRE) -->
-        <div class="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+        <!-- Tombol Kanan (SPEED CONTROL, WEAPON SWITCH & FIRE) -->
+        <div class="fixed bottom-6 right-6 z-40 flex items-center gap-2.5">
             <!-- SPEED CONTROL & POPUP SLIDER -->
             <div class="relative flex items-center">
-                <!-- Popup Slider Box -->
                 <div id="speed-slider-box" class="hidden absolute bottom-16 right-0 bg-gray-900/95 border border-emerald-500/50 p-2.5 rounded-xl backdrop-blur-md shadow-2xl flex flex-col items-center gap-1.5 w-36 z-50">
                     <div class="flex justify-between w-full text-[9px] font-bold text-emerald-400">
                         <span>SPEED</span>
@@ -195,6 +193,13 @@
                     <span id="speed-text" class="text-[8px] text-emerald-300">100%</span>
                 </button>
             </div>
+
+            <!-- SWITCH WEAPON BUTTON -->
+            <button id="btn-switch" data-key="KeyQ"
+                class="touch-none select-none rounded-full border border-purple-400/50 bg-purple-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px] active:scale-95">
+                <span>SWT</span>
+                <span id="weapon-text" class="text-[8px] text-purple-300">BULLET</span>
+            </button>
 
             <!-- FIRE BUTTON -->
             <button data-key="Space"

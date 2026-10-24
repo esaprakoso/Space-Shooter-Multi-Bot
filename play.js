@@ -5,27 +5,27 @@ const MAX_LIVES = 5;
 const W = 40, H = 48, RADIUS = 18, MASS = 25;
 const MAX_FUEL = 100, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
-const MAX_METEORS = 10;
+const MAX_METEORS = 20;
 const BULLET_DAMAGE = 15;
-const BULLET_LIFE = 100;
+const BULLET_LIFE = 120;
 const BULLET_MASS = 2;
 const METEOR_MAX_SPEED = 5;
 const METEOR_TYPES = [
-    { r: 8, hp: 15 },
-    { r: 12, hp: 45 },
-    { r: 18, hp: 90 },
+    { r: 10, hp: 20 },
+    { r: 16, hp: 60 },
+    { r: 24, hp: 120 },
 ];
-const PICKUP_MAX = 6;
-const PICKUP_SPAWN_CHANCE = 0.007;
+const PICKUP_MAX = 8;
+const PICKUP_SPAWN_CHANCE = 0.008;
 const PICKUP_RADIUS = 14;
-const PICKUP_SEEK = 700;
+const PICKUP_SEEK = 900;
 const HEAL_AMOUNT = 30;
 const MAG_AMOUNT = 1;
 const WEAPON_DURATION = 9000;
 const SHIELD_DURATION = 5000;
 const SHIELD_COOLDOWN = 15000;
-const AVOID_METEOR = 80;
-const AVOID_SHIP = 60;
+const AVOID_METEOR = 100;
+const AVOID_SHIP = 80;
 
 const TEAMS = {
     blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
@@ -69,6 +69,8 @@ const speedText = $('speed-text');
 const speedSliderBox = $('speed-slider-box');
 const speedSlider = $('speed-slider');
 const sliderValText = $('slider-val-text');
+const btnSwitch = $('btn-switch');
+const weaponText = $('weapon-text');
 const startScreen = $('start-screen');
 const startBtn = $('start-btn');
 
@@ -178,6 +180,7 @@ class Ship {
         this.team = team;
         this.isPlayer = isPlayer;
         this.botType = botType;
+        this.selectedWeapon = 'bullet'; // 'bullet', 'laser', 'homing'
         if (isPlayer) this.lives = INITIAL_LIVES;
 
         if (isPlayer) {
@@ -212,9 +215,6 @@ class Ship {
         this.lastJoyAngle = 0;
         this.shieldUntil = 0;
         this.shieldCdUntil = 0;
-        this.multishotUntil = 0;
-        this.laserUntil = 0;
-        this.homingUntil = 0;
 
         this.buildPlane();
         if (!isPlayer) this.buildHud();
@@ -225,18 +225,24 @@ class Ship {
         const el = document.createElement('div');
         el.className = 'fixed left-0 top-0 w-10 h-12 pointer-events-none z-10';
         el.style.willChange = 'transform';
-        // Gambar kapal lengkap dengan elemen visual Thrust & RCS
+        // Gambar kapal presisi dengan efek nyala api Thrust dan RCS
         el.innerHTML = `
         <div data-fx="shield-aura" class="absolute -inset-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
         <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
              style="filter:drop-shadow(0 0 8px rgba(${c.glow},0.8))">
-            <path data-fx="thrust" d="M15 38 L20 48 L25 38 Z" fill="#F97316" style="display:none"/>
-            <path data-fx="left" d="M4 36 L-2 40 L4 44 Z" fill="${c.rcs}" style="display:none"/>
-            <path data-fx="right" d="M36 36 L42 40 L36 44 Z" fill="${c.rcs}" style="display:none"/>
-            <g data-fx="rev" style="display:none">
-                <path d="M10 16 L4 10 L14 12 Z" fill="${c.rcs}"/>
-                <path d="M30 16 L36 10 L26 12 Z" fill="${c.rcs}"/>
+            <!-- THRUSTER MAIN FLAME -->
+            <g data-fx="thrust" style="display:none">
+                <path d="M14 38 L20 54 L26 38 Z" fill="#f97316"/>
+                <path d="M16 38 L20 48 L24 38 Z" fill="#facc15"/>
             </g>
+            <!-- RCS JETS -->
+            <path data-fx="left" d="M4 36 L-6 40 L4 44 Z" fill="${c.rcs}" style="display:none"/>
+            <path data-fx="right" d="M36 36 L46 40 L36 44 Z" fill="${c.rcs}" style="display:none"/>
+            <g data-fx="rev" style="display:none">
+                <path d="M10 14 L2 4 L14 10 Z" fill="${c.rcs}"/>
+                <path d="M30 14 L38 4 L26 10 Z" fill="${c.rcs}"/>
+            </g>
+            <!-- BODY -->
             <path d="M20 6 L36 42 L20 36 L4 42 Z" fill="${c.body}"/>
             <path d="M20 12 L25 26 L20 23 L15 26 Z" fill="${c.cockpit}"/>
         </svg>`;
@@ -270,13 +276,15 @@ class Ship {
             mainEmpty: false, rcsEmpty: false,
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
             dead: false, invuln: false, lastShot: 0, joyHold: 0, lastJoyAngle: 0,
-            shieldUntil: 0, shieldCdUntil: 0, multishotUntil: 0, laserUntil: 0, homingUntil: 0,
+            shieldUntil: 0, shieldCdUntil: 0,
+            selectedWeapon: 'bullet',
             input: {}, fx: {},
         });
         if (this.el) {
             this.el.classList.remove('hidden');
             this.el.style.opacity = '1';
         }
+        if (this.isPlayer && weaponText) weaponText.textContent = 'BULLET';
     }
 
     activateShield() {
@@ -288,6 +296,15 @@ class Ship {
             return true;
         }
         return false;
+    }
+
+    cycleWeapon() {
+        const modes = ['bullet', 'laser', 'homing'];
+        let idx = modes.indexOf(this.selectedWeapon);
+        this.selectedWeapon = modes[(idx + 1) % modes.length];
+        if (this.isPlayer && weaponText) {
+            weaponText.textContent = this.selectedWeapon.toUpperCase();
+        }
     }
 
     readKeys() {
@@ -308,6 +325,11 @@ class Ship {
         if (k.KeyR) {
             requestBackup();
             keys.KeyR = false;
+        }
+
+        if (k.KeyQ) {
+            this.cycleWeapon();
+            keys.KeyQ = false;
         }
 
         // Virtual Joystick Logic
@@ -416,9 +438,9 @@ class Ship {
 
         if (Math.abs(diff) > 6) { i.left = diff < 0; i.right = diff > 0; }
         if (pk) { if (Math.abs(diff) < 40) i.thrust = true; return; }
-        if (dist > 320) i.thrust = true;
-        else if (dist < 180) i.reverse = true;
-        if (Math.abs(diff) < 8 && dist < 450) i.shoot = true;
+        if (dist > 400) i.thrust = true;
+        else if (dist < 200) i.reverse = true;
+        if (Math.abs(diff) < 8 && dist < 500) i.shoot = true;
     }
 
     step(ts) {
@@ -475,16 +497,12 @@ class Ship {
     }
 
     shoot() {
-        const now = performance.now();
-        const isLaser = !!(this.laserUntil && now < this.laserUntil);
-        const isHoming = !!(this.homingUntil && now < this.homingUntil);
-        const isMulti = !!(this.multishotUntil && now < this.multishotUntil);
-
+        const mode = this.selectedWeapon;
         const rad = (this.angle * Math.PI) / 180;
         const spawnX = this.x + Math.sin(rad) * 18;
         const spawnY = this.y + Math.cos(rad) * 18;
 
-        if (isLaser) {
+        if (mode === 'laser') {
             const vx = this.vx + 22 * Math.sin(rad);
             const vy = this.vy + 22 * Math.cos(rad);
             const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
@@ -497,7 +515,7 @@ class Ship {
                 x: spawnX, y: spawnY, vx, vy
             });
 
-        } else if (isHoming) {
+        } else if (mode === 'homing') {
             [-8, 8].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const r = (ang * Math.PI) / 180;
@@ -511,25 +529,7 @@ class Ship {
                 el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:14px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
                 document.body.appendChild(el);
                 bullets.push({
-                    el, owner: this, angle: bAngle, life: BULLET_LIFE * 1.2, damage: 22, homing: true, color: '#fb923c', trail: [],
-                    x: sx, y: sy, vx, vy
-                });
-            });
-
-        } else if (isMulti) {
-            [this.angle - 12, this.angle, this.angle + 12].forEach(ang => {
-                const r = (ang * Math.PI) / 180;
-                const sx = this.x + Math.sin(r) * 18;
-                const sy = this.y + Math.cos(r) * 18;
-                const vx = this.vx + 14 * Math.sin(r);
-                const vy = this.vy + 14 * Math.cos(r);
-                const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
-
-                const el = document.createElement('div');
-                el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
-                document.body.appendChild(el);
-                bullets.push({
-                    el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
+                    el, owner: this, angle: bAngle, life: BULLET_LIFE * 1.3, damage: 22, homing: true, color: '#fb923c', trail: [],
                     x: sx, y: sy, vx, vy
                 });
             });
@@ -600,30 +600,18 @@ class Ship {
         if (type === 'health') return this.hull < this.maxHp;
         if (type === 'mag') return this.mags < this.p.maxMags;
         if (type === 'life') return this.isPlayer && this.lives < MAX_LIVES;
-        if (type === 'multi') return !this.multishotUntil || performance.now() > this.multishotUntil;
-        if (type === 'laser') return !this.laserUntil || performance.now() > this.laserUntil;
-        if (type === 'homing') return !this.homingUntil || performance.now() > this.homingUntil;
         return true;
     }
 
     apply(type) {
-        const now = performance.now();
         if (type === 'health') this.hull = Math.min(this.maxHp, this.hull + HEAL_AMOUNT);
         else if (type === 'mag') this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
         else if (type === 'life') {
             if (this.isPlayer) this.lives = Math.min(MAX_LIVES, this.lives + 1);
             createExplosion(this.x, this.y, 18);
-        } else if (type === 'multi') {
-            this.multishotUntil = now + WEAPON_DURATION;
-            this.laserUntil = 0; this.homingUntil = 0;
-            createExplosion(this.x, this.y, 16);
-        } else if (type === 'laser') {
-            this.laserUntil = now + WEAPON_DURATION;
-            this.multishotUntil = 0; this.homingUntil = 0;
-            createExplosion(this.x, this.y, 16);
-        } else if (type === 'homing') {
-            this.homingUntil = now + WEAPON_DURATION;
-            this.multishotUntil = 0; this.laserUntil = 0;
+        } else if (type === 'multi' || type === 'laser' || type === 'homing') {
+            this.selectedWeapon = type === 'multi' ? 'bullet' : type;
+            if (this.isPlayer && weaponText) weaponText.textContent = this.selectedWeapon.toUpperCase();
             createExplosion(this.x, this.y, 16);
         }
     }
@@ -651,15 +639,8 @@ class Ship {
 
         if (this.isPlayer) {
             const now = performance.now();
-            const isLaser = !!(this.laserUntil && now < this.laserUntil);
-            const isHoming = !!(this.homingUntil && now < this.homingUntil);
-            const isMulti = !!(this.multishotUntil && now < this.multishotUntil);
-
-            let weaponTag = '';
-            let weaponColor = '';
-            if (isLaser) { weaponTag = ' [LASER]'; weaponColor = '#c084fc'; }
-            else if (isHoming) { weaponTag = ' [HOMING]'; weaponColor = '#fb923c'; }
-            else if (isMulti) { weaponTag = ' [MULTI]'; weaponColor = '#14b8a6'; }
+            let weaponTag = ` [${this.selectedWeapon.toUpperCase()}]`;
+            let weaponColor = this.selectedWeapon === 'laser' ? '#c084fc' : this.selectedWeapon === 'homing' ? '#fb923c' : '#22d3ee';
 
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
             const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
@@ -672,7 +653,7 @@ class Ship {
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
             if (ammoBar) {
                 ammoBar.style.opacity = this.reloadUntil ? '0.4' : '1';
-                ammoBar.style.background = weaponColor || '';
+                ammoBar.style.background = weaponColor;
             }
             setTxt(ammoText, `${ammoTxt}${weaponTag}`);
             setTxt($('hud-status-mini'), `${this.lives} NYAWA · ${Math.round(this.hull)}% HP`);
@@ -769,7 +750,7 @@ function spawnBot(team, botType = 'standard') {
         spawnAngle = 0;
     } else {
         const angle = Math.random() * Math.PI * 2;
-        const dist = 900 + Math.random() * 500;
+        const dist = 1200 + Math.random() * 800;
         spawnX = player.x + Math.cos(angle) * dist;
         spawnY = player.y + Math.sin(angle) * dist;
         spawnAngle = (Math.atan2(player.x - spawnX, player.y - spawnY) * 180) / Math.PI;
@@ -802,10 +783,10 @@ function spawnMeteor() {
     if (meteors.length >= MAX_METEORS) return;
     const type = METEOR_TYPES[Math.floor(Math.random() * METEOR_TYPES.length)];
     const radius = type.r;
-    const speed = Math.random() * 0.4 + 0.1;
+    const speed = Math.random() * 0.5 + 0.1;
     const ang = Math.random() * Math.PI * 2;
     const sa = Math.random() * Math.PI * 2;
-    const sd = Math.hypot(window.innerWidth, window.innerHeight) / 2 + 40 + Math.random() * 150;
+    const sd = Math.hypot(window.innerWidth, window.innerHeight) + 100 + Math.random() * 300;
 
     const el = document.createElement('div');
     el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;box-sizing:border-box;border:1px solid #a8a29e;background:rgba(68,64,60,.9);will-change:transform;width:${radius * 2}px;height:${radius * 2}px`;
@@ -823,11 +804,13 @@ function updateMeteors() {
     for (let i = 0; i < meteors.length; i++)
         for (let j = i + 1; j < meteors.length; j++) resolveCollision(meteors[i], meteors[j], 0.8);
 
+    const far = Math.hypot(window.innerWidth, window.innerHeight) * 1.8;
+
     for (let i = meteors.length - 1; i >= 0; i--) {
         const m = meteors[i];
         m.x += m.vx; m.y += m.vy;
 
-        if (Math.hypot(m.x - (cam.x + window.innerWidth / 2), m.y - (cam.y + window.innerHeight / 2)) > Math.hypot(window.innerWidth, window.innerHeight)) {
+        if (Math.hypot(m.x - (cam.x + window.innerWidth / 2), m.y - (cam.y + window.innerHeight / 2)) > far) {
             if (m.el) m.el.remove(); meteors.splice(i, 1);
             continue;
         }
@@ -876,7 +859,7 @@ function updateBullets() {
         if (b.trail.length > 8) b.trail.shift();
 
         if (b.homing) {
-            let target = null, minDist = 600;
+            let target = null, minDist = 800;
             for (const s of ships) {
                 if (s.dead || s.team === b.owner.team) continue;
                 const d = Math.hypot(s.x - b.x, s.y - b.y);
@@ -936,14 +919,14 @@ function spawnPickup() {
     document.body.appendChild(el);
     pickups.push({
         el, type,
-        x: cam.x + (Math.random() * 1.4 - 0.2) * window.innerWidth,
-        y: cam.y + (Math.random() * 1.4 - 0.2) * window.innerHeight,
+        x: cam.x + (Math.random() * 2.0 - 0.5) * window.innerWidth,
+        y: cam.y + (Math.random() * 2.0 - 0.5) * window.innerHeight,
     });
 }
 
 function updatePickups() {
     if (Math.random() < PICKUP_SPAWN_CHANCE) spawnPickup();
-    const far = Math.hypot(window.innerWidth, window.innerHeight) * 1.2;
+    const far = Math.hypot(window.innerWidth, window.innerHeight) * 1.8;
 
     for (let i = pickups.length - 1; i >= 0; i--) {
         const k = pickups[i];
@@ -966,7 +949,7 @@ function updatePickups() {
 // ================= GAME LOOP =================
 function gameLoop(ts) {
     if (gameStarted && !isPaused) {
-        if (Math.random() < 0.03) spawnMeteor();
+        if (Math.random() < 0.04) spawnMeteor();
 
         for (const s of [...ships]) {
             if (s.dead) continue;
@@ -1027,9 +1010,9 @@ function resizeCanvases() {
 window.addEventListener('resize', resizeCanvases);
 resizeCanvases();
 
-const STAR_TILE = 1200;
+const STAR_TILE = 2400;
 const STAR_LAYERS = [{ k: 0.2, size: 1, a: 0.5 }, { k: 0.4, size: 1.5, a: 0.7 }, { k: 0.7, size: 2, a: 0.9 }];
-const stars = Array.from({ length: 140 }, () => ({
+const stars = Array.from({ length: 280 }, () => ({
     x: Math.random() * STAR_TILE, y: Math.random() * STAR_TILE,
     L: STAR_LAYERS[Math.floor(Math.random() * STAR_LAYERS.length)],
 }));
@@ -1154,6 +1137,7 @@ window.addEventListener('keydown', (e) => {
     if (!isPaused) {
         if (e.code === 'KeyE' && player) player.activateShield();
         if (e.code === 'KeyR') requestBackup();
+        if (e.code === 'KeyQ' && player) player.cycleWeapon();
     }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1167,6 +1151,7 @@ document.querySelectorAll('[data-key]').forEach(btn => {
         if (v && !isPaused) {
             if (code === 'KeyE' && player) player.activateShield();
             if (code === 'KeyR') requestBackup();
+            if (code === 'KeyQ' && player) player.cycleWeapon();
         }
     };
     btn.addEventListener('pointerdown', (e) => { btn.setPointerCapture(e.pointerId); set(true)(e); });
@@ -1179,6 +1164,9 @@ if (btnShield) {
 }
 if (btnBackup) {
     btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!isPaused) requestBackup(); });
+}
+if (btnSwitch) {
+    btnSwitch.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player && !isPaused) player.cycleWeapon(); });
 }
 
 // LOGIKA SLIDER KECEPATAN
