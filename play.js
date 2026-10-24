@@ -618,7 +618,7 @@ function spawnBot(team, botType = 'standard') {
     const bot = new Ship(team, false, botType);
     bot.reset(
         cam.x + window.innerWidth * rx,
-        cam.y + window.innerHeight * (isAlly ? 0.2 : 0.8),
+        cam.y + window.innerHeight * (isAlly ? 0.3 : 0.8),
         isAlly ? 0 : 90
     );
     ships.push(bot);
@@ -709,7 +709,7 @@ function updateMeteors() {
     }
 }
 
-// ================= PELURU =================
+// ================= PELURU (FIX FRIENDLY FIRE) =================
 function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
@@ -719,7 +719,8 @@ function updateBullets() {
         const sy = window.innerHeight - (b.y - cam.y);
         if (b.el) b.el.style.transform = `translate(${sx - 4}px, ${sy - 8}px) rotate(${b.angle}deg)`;
 
-        const target = ships.find(s => !s.dead && s !== b.owner && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
+        // Hanya mengenai musuh (Abaikan pemilik dan teman satu tim)
+        const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
         const out = --b.life <= 0;
 
         if (target || out) {
@@ -791,7 +792,8 @@ function gameLoop(ts) {
         for (let i = 0; i < live.length; i++) {
             for (let j = i + 1; j < live.length; j++) {
                 const imp = resolveCollision(live[i], live[j], 0.8);
-                if (imp > 0) {
+                // Hanya berikan damage benturan jika BEDA TIM
+                if (imp > 0 && live[i].team !== live[j].team) {
                     live[i].takeDamage(Math.round(imp * 1.5));
                     live[j].takeDamage(Math.round(imp * 1.5));
                 }
@@ -873,16 +875,18 @@ function updateEffects() {
         fxCtx.fillRect(p.x - cam.x - p.size / 2, h - (p.y - cam.y) - p.size / 2, p.size, p.size);
     }
     fxCtx.globalAlpha = 1;
-    drawEnemyArrows();
+    drawShipIndicators();
 }
 
-function drawEnemyArrows() {
+// Panah Penunjuk Arah untuk Musuh (Merah) dan Ally (Biru) di luar layar
+function drawShipIndicators() {
     const w = fxCanvas.width, h = fxCanvas.height, cx = w / 2, cy = h / 2, pad = 28;
     fxCtx.font = 'bold 10px monospace';
     fxCtx.textAlign = 'center';
     fxCtx.textBaseline = 'middle';
+
     for (const s of ships) {
-        if (s.dead || s.team === PLAYER_TEAM) continue;
+        if (s.dead || s.isPlayer) continue;
         const sx = s.x - cam.x, sy = h - (s.y - cam.y);
         if (sx > -20 && sx < w + 20 && sy > -20 && sy < h + 20) continue;
 
@@ -891,10 +895,12 @@ function drawEnemyArrows() {
         const px = cx + dx * t, py = cy + dy * t;
         const ang = Math.atan2(dy, dx);
 
+        const isAlly = s.team === PLAYER_TEAM;
+
         fxCtx.save();
         fxCtx.translate(px, py);
         fxCtx.rotate(ang);
-        fxCtx.fillStyle = s.c.body || '#ef4444';
+        fxCtx.fillStyle = isAlly ? '#3b82f6' : (s.c.body || '#ef4444');
         fxCtx.strokeStyle = '#fff';
         fxCtx.lineWidth = 1.5;
         fxCtx.beginPath();
@@ -902,7 +908,7 @@ function drawEnemyArrows() {
         fxCtx.fill(); fxCtx.stroke();
         fxCtx.restore();
 
-        fxCtx.fillStyle = '#fca5a5';
+        fxCtx.fillStyle = isAlly ? '#93c5fd' : '#fca5a5';
         fxCtx.fillText(`${Math.round(Math.hypot(dx, dy) / 10)}m`, px - Math.cos(ang) * 26, py - Math.sin(ang) * 26);
     }
 }
