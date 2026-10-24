@@ -30,6 +30,12 @@ const AVOID_SHIP = 70;
 const LASER_RANGE = 650;       // jarak maks beam (px)
 const LASER_TICK = 100;        // interval damage (ms)
 const LASER_TICK_DAMAGE = 4;   // ~40 dps
+const BOT_LASER_FACTOR = 0.5;  // damage laser bot = 50% dari player
+
+const STEP = 1000 / 60;        // fixed timestep: fisika selalu 60 Hz
+const SCORE_BY_TYPE = { scout: 100, standard: 150, heavy: 300 };
+const WAVE_BONUS = 250;        // x nomor wave
+const BEST_KEY = 'ssmb_best_score';
 
 const TEAMS = {
     blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
@@ -61,6 +67,8 @@ const hullBar = $('hull-bar'), hullText = $('hull-text');
 const ammoBar = $('ammo-bar'), ammoText = $('ammo-text');
 const enemyCount = $('enemy-count'), allyCount = $('ally-count');
 const waveCount = $('wave-count');
+const scoreCount = $('score-count');
+const bestText = $('best-text');
 const waveBanner = $('wave-banner');
 const bannerTitle = $('banner-title');
 const bannerSubtitle = $('banner-subtitle');
@@ -104,6 +112,15 @@ let currentWave = 1;
 let waveState = 'PLAYING';
 let backupCdUntil = 0;
 let playerSpeedFactor = 1.0;
+
+// Jam game: hanya maju saat game berjalan (tidak saat pause)
+let gameTime = 0;
+let lastTs = 0, accumulator = 0;
+let waveStartAt = 0;
+
+let score = 0, best = 0, bestBefore = 0;
+try { best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) { /* abaikan */ }
+if (bestText) bestText.textContent = best;
 
 // ================= UTIL =================
 function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; } }
@@ -169,12 +186,10 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) pauseGame("Berpindah aplikasi / tab");
 });
 
-window.addEventListener('blur', () => {
-    pauseGame("Layar kehilangan fokus");
-});
-
+// Pause portrait hanya di perangkat sentuh (di desktop, resize/blur tidak memicu pause)
+const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
 function checkOrientationPause() {
-    if (window.innerHeight > window.innerWidth) {
+    if (isTouchDevice && window.innerHeight > window.innerWidth) {
         pauseGame("Mode Layar Tegak (Portrait)");
     }
 }
@@ -283,6 +298,7 @@ class Ship {
             dead: false, invuln: false, lastShot: 0, joyHold: 0, lastJoyAngle: 0,
             shieldUntil: 0, shieldCdUntil: 0, laserUntil: 0, homingUntil: 0,
             lastLaserShot: 0, lastHomingShot: 0, laserOn: false,
+            invulnUntil: 0, respawnAt: 0,
             input: {}, fx: {},
         });
         if (this.el) {
@@ -292,7 +308,7 @@ class Ship {
     }
 
     activateShield() {
-        const now = performance.now();
+        const now = gameTime;
         if (now >= this.shieldCdUntil) {
             this.shieldUntil = now + SHIELD_DURATION;
             this.shieldCdUntil = now + SHIELD_COOLDOWN;
@@ -440,8 +456,12 @@ class Ship {
 
     step(ts) {
         const p = this.p, i = this.input;
+        if (this.invuln && ts >= this.invulnUntil) {
+            this.invuln = false;
+            if (this.el) this.el.style.opacity = '1';
+        }
         const speedFactor = this.isPlayer ? playerSpeedFactor : 1.0;
-        const now = performance.now();
+        const now = gameTime;
 
         if (this.isPlayer) {
             this.rcs = MAX_FUEL;
@@ -551,8 +571,8 @@ class Ship {
         }
     }
 
-    takeDamage(amount, beam = false) {
-        const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
+    takeDamage(amount, beam = false, source = null) {
+        const isShieldActive = !!(this.shieldUntil && gameTime < this.shieldUntil);
         if (isShieldActive) {
             createExplosion(this.x, this.y, 2);
             return;
@@ -561,32 +581,32 @@ class Ship {
 
         this.hull = Math.max(0, this.hull - amount);
         createExplosion(this.x, this.y, beam ? 2 : 10);
-        if (this.hull <= 0) return this.destroy();
+        if (this.hull <= 0) return this.destroy(source);
         if (beam) return;
 
         this.invuln = true;
+        this.invulnUntil = gameTime + 800;
         if (this.el) this.el.style.opacity = '0.4';
-        setTimeout(() => { if (this.el) this.el.style.opacity = '1'; this.invuln = false; }, 800);
     }
 
-    destroy() {
+    destroy(source = null) {
         this.dead = true;
         createExplosion(this.x, this.y, 36);
+
         if (this.isPlayer) {
             this.lives--;
             if (this.el) this.el.classList.add('hidden');
 
             if (this.lives > 0) {
-                setTimeout(() => {
-                    if (!gameStarted) return;
-                    this.reset(this.x, this.y, 0);
-                    this.shieldCdUntil = 0;
-                    this.activateShield();
-                }, 1200);
+                this.respawnAt = gameTime + 1200;   // diproses di updateGame()
             } else {
-                showStatus('GAME OVER! NYAWA HABIS', 'text-red-500');
+                const rec = best > bestBefore ? ' · REKOR BARU!' : '';
+                showStatus(`GAME OVER · WAVE ${currentWave} · SKOR ${score}${rec}`, 'text-red-500');
             }
         } else {
+            if (source && source.team === PLAYER_TEAM && this.team !== PLAYER_TEAM) {
+                addScore(SCORE_BY_TYPE[this.botType] || 100);
+            }
             this.remove();
             checkWaveProgress();
         }
@@ -608,7 +628,7 @@ class Ship {
     }
 
     apply(type) {
-        const now = performance.now();
+        const now = gameTime;
         if (type === 'health') this.hull = Math.min(this.maxHp, this.hull + HEAL_AMOUNT);
         else if (type === 'mag') this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
         else if (type === 'life') {
@@ -650,7 +670,7 @@ class Ship {
         }
 
         if (this.isPlayer) {
-            const now = performance.now();
+            const now = gameTime;
 
             if (this.laserUntil && now < this.laserUntil) {
                 if (btnLaser) btnLaser.classList.remove('hidden');
@@ -718,7 +738,7 @@ function showStatus(text, colorClass) {
 
 function requestBackup() {
     if (!gameStarted || player.dead || isPaused) return;
-    const now = performance.now();
+    const now = gameTime;
     if (now < backupCdUntil) return;
 
     const cdDuration = 15000 + (currentWave - 1) * 5000;
@@ -729,8 +749,24 @@ function requestBackup() {
     createExplosion(player.x, player.y, 10);
 }
 
+function addScore(n) {
+    score += n;
+    setTxt(scoreCount, String(score));
+    if (score > best) {
+        best = score;
+        setTxt(bestText, String(best));
+        try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) { /* abaikan */ }
+    }
+}
+
 function startWave(waveNum) {
     currentWave = waveNum;
+    if (waveNum === 1) {
+        score = 0;
+        bestBefore = best;
+        waveStartAt = 0;
+        setTxt(scoreCount, '0');
+    }
     waveState = 'PLAYING';
     if (waveCount) waveCount.textContent = currentWave;
     if (waveBanner) waveBanner.classList.add('hidden');
@@ -753,9 +789,8 @@ function checkWaveProgress() {
         if (bannerSubtitle) bannerSubtitle.textContent = `Persiapan untuk Wave ${currentWave + 1}...`;
         if (waveBanner) waveBanner.classList.remove('hidden');
 
-        setTimeout(() => {
-            if (!player.dead && gameStarted) startWave(currentWave + 1);
-        }, 3000);
+        addScore(WAVE_BONUS * currentWave);
+        waveStartAt = gameTime + 3000;   // diproses di updateGame()
     }
 }
 
@@ -781,7 +816,7 @@ function spawnBot(team, botType = 'standard') {
 
     if (!isAlly && currentWave >= 2) {
         const rand = Math.random();
-        const now = performance.now();
+        const now = gameTime;
         if (rand < 0.35) {
             bot.laserUntil = now + WEAPON_DURATION * 1.5;
         } else if (rand < 0.6) {
@@ -920,10 +955,10 @@ function hideBeam(b) {
 }
 
 function updateBeams() {
-    const now = performance.now();
     for (const s of [...ships]) {
-        if (!s.laserOn || s.dead) { if (s.beam) hideBeam(s.beam); continue; }
-        const b = ensureBeam(s);
+        const b = s.beam;
+        if (!s.laserOn || s.dead) { if (b) b.state = null; continue; }
+        const bm = ensureBeam(s);
         const rad = (s.angle * Math.PI) / 180;
         const dx = Math.sin(rad), dy = Math.cos(rad);
         const ox = s.x + dx * 12, oy = s.y + dy * 12;
@@ -943,12 +978,13 @@ function updateBeams() {
         for (const m of meteors) test(m, m.radius, 'meteor');
 
         if (hitObj) {
-            if (now - b.lastTick >= LASER_TICK) {
-                b.lastTick = now;
+            if (gameTime - bm.lastTick >= LASER_TICK) {
+                bm.lastTick = gameTime;
+                const dmg = s.isPlayer ? LASER_TICK_DAMAGE : LASER_TICK_DAMAGE * BOT_LASER_FACTOR;
                 if (hitType === 'ship') {
-                    hitObj.takeDamage(LASER_TICK_DAMAGE, true);
+                    hitObj.takeDamage(dmg, true, s);
                 } else {
-                    hitObj.hp -= LASER_TICK_DAMAGE;
+                    hitObj.hp -= dmg;
                     if (hitObj.hp <= 0) {
                         createExplosion(hitObj.x, hitObj.y, 12 + hitObj.radius);
                         if (hitObj.el) hitObj.el.remove();
@@ -960,19 +996,31 @@ function updateBeams() {
             if (Math.random() < 0.5) createExplosion(ox + dx * len, oy + dy * len, 1);
         }
 
-        // render
-        const sx = ox - cam.x, sy = window.innerHeight - (oy - cam.y);
+        bm.state = { ox, oy, dx, dy, len, hit: !!hitObj, angle: s.angle };
+    }
+}
+
+// Digambar tiap frame (setelah kamera diperbarui) supaya beam menempel di kapal
+function renderBeams() {
+    for (const s of ships) {
+        const b = s.beam;
+        if (!b) continue;
+        const st = b.state;
+        if (!st || s.dead) { hideBeam(b); continue; }
+
+        const sx = st.ox - cam.x, sy = window.innerHeight - (st.oy - cam.y);
         const flick = 0.8 + Math.random() * 0.2;
         b.root.style.display = '';
-        b.root.style.height = len + 'px';
+        b.root.style.height = st.len + 'px';
         b.root.style.opacity = flick;
-        b.root.style.transform = `translate(${sx - 11}px, ${sy - len}px) rotate(${s.angle}deg) scaleX(${0.85 + Math.random() * 0.3})`;
+        b.root.style.transform = `translate(${sx - 11}px, ${sy - st.len}px) rotate(${st.angle}deg) scaleX(${0.85 + Math.random() * 0.3})`;
 
         b.muzzle.style.display = '';
         b.muzzle.style.transform = `translate(${sx - 13}px, ${sy - 13}px) scale(${flick})`;
 
-        if (hitObj) {
-            const ex = ox + dx * len - cam.x, ey = window.innerHeight - (oy + dy * len - cam.y);
+        if (st.hit) {
+            const ex = st.ox + st.dx * st.len - cam.x;
+            const ey = window.innerHeight - (st.oy + st.dy * st.len - cam.y);
             b.hit.style.display = '';
             b.hit.style.transform = `translate(${ex - 13}px, ${ey - 13}px) scale(${0.8 + Math.random() * 0.8})`;
         } else {
@@ -1033,7 +1081,7 @@ function updateBullets() {
 
         if (target || out) {
             if (b.el) b.el.remove(); bullets.splice(i, 1);
-            if (target) target.takeDamage(b.damage || BULLET_DAMAGE);
+            if (target) target.takeDamage(b.damage || BULLET_DAMAGE, false, b.owner);
         }
     }
 }
@@ -1088,35 +1136,69 @@ function updatePickups() {
 }
 
 // ================= GAME LOOP =================
-function gameLoop(ts) {
-    if (gameStarted && !isPaused) {
-        if (Math.random() < 0.04) spawnMeteor();
+function updateGame() {
+    gameTime += STEP;
 
-        for (const s of [...ships]) {
-            if (s.dead) continue;
-            s.isPlayer ? s.readKeys() : s.ai();
-            s.step(ts);
-        }
+    // respawn player
+    if (player.dead && player.lives > 0 && player.respawnAt && gameTime >= player.respawnAt) {
+        player.respawnAt = 0;
+        player.reset(player.x, player.y, 0);
+        player.shieldCdUntil = 0;
+        player.activateShield();
+    }
 
-        const live = ships.filter(s => !s.dead);
-        for (let i = 0; i < live.length; i++) {
-            for (let j = i + 1; j < live.length; j++) {
-                const imp = resolveCollision(live[i], live[j], 0.8);
-                if (imp > 0 && live[i].team !== live[j].team) {
-                    live[i].takeDamage(Math.round(imp * 1.5));
-                    live[j].takeDamage(Math.round(imp * 1.5));
-                }
+    // wave berikutnya (tunggu sampai player hidup lagi)
+    if (waveState === 'CLEARED' && waveStartAt && gameTime >= waveStartAt && !player.dead && player.lives > 0) {
+        waveStartAt = 0;
+        startWave(currentWave + 1);
+    }
+
+    if (Math.random() < 0.04) spawnMeteor();
+
+    for (const s of [...ships]) {
+        if (s.dead) continue;
+        s.isPlayer ? s.readKeys() : s.ai();
+        s.step(gameTime);
+    }
+
+    const live = ships.filter(s => !s.dead);
+    for (let i = 0; i < live.length; i++) {
+        for (let j = i + 1; j < live.length; j++) {
+            const imp = resolveCollision(live[i], live[j], 0.8);
+            if (imp > 0 && live[i].team !== live[j].team) {
+                live[i].takeDamage(Math.round(imp * 1.5));
+                live[j].takeDamage(Math.round(imp * 1.5));
             }
         }
+    }
 
-        updatePickups();
-        updateBullets();
-        updateMeteors();
+    updatePickups();
+    updateBullets();
+    updateMeteors();
+    updateParticles();
+}
+
+function gameLoop(ts) {
+    const dt = Math.min(ts - (lastTs || ts), 100);
+    lastTs = ts;
+
+    if (gameStarted && !isPaused) {
+        accumulator += dt;
+        let steps = 0;
+        while (accumulator >= STEP && steps < 5) {
+            updateGame();
+            accumulator -= STEP;
+            steps++;
+        }
+        if (steps === 5) accumulator = 0;   // buang backlog kalau frame terlalu lambat
+    } else {
+        accumulator = 0;
     }
 
     updateCamera();
     updateBackground();
     ships.forEach(s => s.render());
+    renderBeams();
     updateEffects();
     updateCounts();
     requestAnimationFrame(gameLoop);
@@ -1172,15 +1254,16 @@ function updateBackground() {
     bgCtx.globalAlpha = 1;
 }
 
+function updateParticles() {
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.op -= 0.035; }
+}
+
 function updateEffects() {
     const h = fxCanvas.height;
     fxCtx.clearRect(0, 0, fxCanvas.width, h);
 
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        if (!isPaused) {
-            p.x += p.vx; p.y += p.vy; p.op -= 0.035;
-        }
         if (p.op <= 0) { particles[i] = particles[particles.length - 1]; particles.pop(); continue; }
         fxCtx.globalAlpha = p.op;
         fxCtx.fillStyle = p.color;
