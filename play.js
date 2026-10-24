@@ -17,6 +17,8 @@ const METEOR_TYPES = [
 ];
 const PICKUP_MAX = 8;
 const PICKUP_DROP_CHANCE = 0.18;   // peluang musuh menjatuhkan pickup saat hancur (15-20%)
+const PICKUP_SPAWN_CHANCE = 0.005;   // peluang per frame pickup acak muncul di peta (~1 tiap 3,3 dtk)
+const RANDOM_PICKUP_TYPES = ['life', 'mag', 'health', 'homing', 'laser'];   // siapa pun (player/bot/ally) bisa mengambil
 const DROP_PITY = 4;              // drop terjamin setelah N kill musuh tanpa drop
 const METEOR_DROP_CHANCE = { 5: 0.03, 8: 0.06, 12: 0.12 };   // per radius meteor; hanya health/mag (anti-farming senjata)
 const SUPPLY_COOLDOWN = 20000;     // jeda supply darurat (ms)
@@ -1630,6 +1632,14 @@ function spawnPickup(x, y, forceType = null) {
 
 function updatePickups() {
     supplyCheck();
+    // spawn acak di sekitar layar (tidak mengusir drop musuh: hanya jika slot masih ada)
+    if (Math.random() < PICKUP_SPAWN_CHANCE && pickups.length < PICKUP_MAX) {
+        spawnPickup(
+            cam.x + (Math.random() * 2.0 - 0.5) * window.innerWidth,
+            cam.y + (Math.random() * 2.0 - 0.5) * window.innerHeight,
+            rollDropType(RANDOM_PICKUP_TYPES)
+        );
+    }
     const far = Math.hypot(window.innerWidth, window.innerHeight) * 1.8;
 
     for (let i = pickups.length - 1; i >= 0; i--) {
