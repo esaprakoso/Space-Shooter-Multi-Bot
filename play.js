@@ -1,5 +1,6 @@
 // ================= KONSTANTA =================
 const PLAYER_TEAM = 'blue';
+const INITIAL_LIVES = 3;
 const W = 40, H = 48, RADIUS = 18, MASS = 25;
 const MAX_FUEL = 100, BOOST_MAX_FUEL = 160, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
@@ -51,6 +52,7 @@ const STATS = {
 const $ = (id) => document.getElementById(id);
 const gameOverBox = $('game-over-box');
 const statusTitle = $('status-title');
+const livesText = $('lives-text');
 const hullBar = $('hull-bar'), hullText = $('hull-text');
 const ammoBar = $('ammo-bar'), ammoText = $('ammo-text');
 const enemyCount = $('enemy-count'), allyCount = $('ally-count');
@@ -131,6 +133,7 @@ class Ship {
         this.team = team;
         this.isPlayer = isPlayer;
         this.botType = botType;
+        if (isPlayer) this.lives = INITIAL_LIVES;
 
         if (isPlayer) {
             this.c = TEAMS[team];
@@ -469,8 +472,21 @@ class Ship {
         this.dead = true;
         createExplosion(this.x, this.y, 36);
         if (this.isPlayer) {
+            this.lives--;
             if (this.el) this.el.classList.add('hidden');
-            showStatus('YOU LOST! GESER: ARAH / WASD', 'text-red-500');
+
+            if (this.lives > 0) {
+                // Respawn Player jika nyawa masih tersisa
+                setTimeout(() => {
+                    if (!gameStarted) return;
+                    this.reset(this.x, this.y, 0);
+                    this.shieldCdUntil = 0;
+                    this.activateShield(); // Beri shield kebal gratis saat respawn
+                }, 1200);
+            } else {
+                // Nyawa habis total -> Game Over
+                showStatus('GAME OVER! NYAWA HABIS', 'text-red-500');
+            }
         } else {
             this.remove();
             checkWaveProgress();
@@ -533,6 +549,8 @@ class Ship {
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
             const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
 
+            const livesIcon = '❤️'.repeat(Math.max(0, this.lives));
+            setTxt(livesText, `${livesIcon} (${this.lives})`);
             setW(hullBar, `${(this.hull / MAX_HULL) * 100}%`);
             setTxt(hullText, `${Math.round(this.hull)}%`);
 
@@ -543,7 +561,7 @@ class Ship {
             }
             setTxt(ammoText, `${ammoTxt}${isMulti ? ' [MULTI]' : ''}`);
 
-            setTxt($('hud-status-mini'), `${Math.round(this.hull)}% HP · ${ammoTxt}${isMulti ? ' [MULTI]' : ''}`);
+            setTxt($('hud-status-mini'), `${this.lives} NYAWA · ${Math.round(this.hull)}% HP`);
 
             // UI Button Shield & CD
             const now = performance.now();
@@ -639,12 +657,10 @@ function spawnBot(team, botType = 'standard') {
         spawnY = cam.y + window.innerHeight * 0.3;
         spawnAngle = 0;
     } else {
-        // Musuh muncul di luar jangkauan layar (acak dari jarak 900px - 1400px)
         const angle = Math.random() * Math.PI * 2;
         const dist = 900 + Math.random() * 500;
         spawnX = player.x + Math.cos(angle) * dist;
         spawnY = player.y + Math.sin(angle) * dist;
-        // Menghadap ke arah Player
         spawnAngle = (Math.atan2(player.x - spawnX, player.y - spawnY) * 180) / Math.PI;
     }
 
@@ -655,6 +671,7 @@ function spawnBot(team, botType = 'standard') {
 
 function resetGame() {
     [...ships].forEach(s => { if (!s.isPlayer) s.remove(); });
+    player.lives = INITIAL_LIVES;
     player.reset(0, 0, 0); updateCamera();
 
     backupCdUntil = 0;
