@@ -43,6 +43,23 @@
 
 <body class="bg-gray-950 w-screen relative font-mono">
 
+    <!-- SCREEN PLAY / LAYAR READY START -->
+    <div id="start-screen" class="fixed inset-0 z-50 bg-gray-950/90 backdrop-blur flex items-center justify-center p-4">
+        <div class="bg-gray-900 border border-cyan-500/40 p-6 rounded-xl max-w-sm w-full text-center space-y-4 shadow-2xl shadow-cyan-900/30">
+            <h1 class="text-2xl font-black text-cyan-400 tracking-wider uppercase">Space Shooter</h1>
+            <div class="text-xs text-gray-300 space-y-2 text-left bg-gray-950/60 p-3 rounded-lg border border-gray-800">
+                <p>• <span class="text-orange-400 font-bold">Joystick Belakang</span>: Mundur (REV)</p>
+                <p>• <span class="text-orange-400 font-bold">Tombol THRUST</span>: Akselerasi Maju</p>
+                <p>• <span class="text-cyan-400 font-bold">Tombol SHIELD (E)</span>: Kebal Serangan 5s</p>
+                <p>• <span class="text-blue-400 font-bold">Tombol BACKUP (R)</span>: Panggil Bantuan</p>
+                <p>• <span class="text-teal-400 font-bold">Item MULTI</span>: Tembakan 3 Arah</p>
+            </div>
+            <button id="start-btn" class="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm rounded-lg transition-all shadow-lg shadow-cyan-600/40 cursor-pointer uppercase tracking-wider">
+                START MISSION
+            </button>
+        </div>
+    </div>
+
     <!-- HUD PLAYER 1 (POJOK KANAN ATAS) -->
     <div class="fixed top-3 right-3 w-48 sm:w-60 z-20 space-y-2">
         <div id="hud-panel" class="bg-gray-900/90 p-2.5 rounded-lg border border-gray-800 backdrop-blur shadow-lg">
@@ -137,7 +154,7 @@
             </div>
         </div>
 
-        <!-- Tombol Tambahan di Kiri (THRUST & SHIELD) -->
+        <!-- Tombol Tambahan di Kiri (THRUST, SHIELD & BACKUP) -->
         <div class="fixed bottom-6 left-48 z-40 flex gap-2">
             <button data-key="ArrowUp"
                 class="touch-none select-none rounded-full border border-orange-400/50 bg-orange-600/30 text-white font-bold flex items-center justify-center w-14 h-14 text-[10px]">THRUST</button>
@@ -145,6 +162,11 @@
                 class="touch-none select-none rounded-full border border-cyan-400/50 bg-cyan-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px]">
                 <span>SHIELD</span>
                 <span id="shield-cd-text" class="text-[8px] text-cyan-300">READY</span>
+            </button>
+            <button id="btn-backup" data-key="KeyR"
+                class="touch-none select-none rounded-full border border-blue-400/50 bg-blue-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px]">
+                <span>BACKUP</span>
+                <span id="backup-cd-text" class="text-[8px] text-blue-300">READY</span>
             </button>
         </div>
 

@@ -1,28 +1,28 @@
 // ================= KONSTANTA =================
-const PLAYER_TEAM = 'blue';      // tim player
+const PLAYER_TEAM = 'blue';
 const W = 40, H = 48, RADIUS = 18, MASS = 25;
 const MAX_FUEL = 100, BOOST_MAX_FUEL = 160, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
 const MAX_METEORS = 10;
-const BULLET_DAMAGE = 15;      // damage peluru ke meteor
-const BULLET_LIFE = 100;       // umur peluru (frame) sebelum hilang
-const BULLET_MASS = 2;         // massa peluru
+const BULLET_DAMAGE = 15;
+const BULLET_LIFE = 100;
+const BULLET_MASS = 2;
 const METEOR_MAX_SPEED = 5;
-const METEOR_TYPES = [         // r = radius, hp = durabilitas
+const METEOR_TYPES = [
     { r: 8, hp: 15 },
     { r: 12, hp: 45 },
     { r: 18, hp: 90 },
 ];
-const PICKUP_MAX = 6;            // maks pickup di dunia
+const PICKUP_MAX = 6;
 const PICKUP_SPAWN_CHANCE = 0.006;
 const PICKUP_RADIUS = 14;
 const PICKUP_SEEK = 700;
 const HEAL_AMOUNT = 30;
 const MAG_AMOUNT = 1;
-const BOOST_DURATION = 10000;    // 10 detik
-const MULTISHOT_DURATION = 8000; // 8 detik
-const SHIELD_DURATION = 5000;    // 5 detik
-const SHIELD_COOLDOWN = 15000;   // 15 detik
+const BOOST_DURATION = 10000;
+const MULTISHOT_DURATION = 8000;
+const SHIELD_DURATION = 5000;
+const SHIELD_COOLDOWN = 15000;
 const AVOID_METEOR = 80;
 const AVOID_SHIP = 60;
 
@@ -31,7 +31,6 @@ const TEAMS = {
     red: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171' },
 };
 
-// Variasi Tipe Musuh Bot
 const BOT_TYPES = {
     scout: { body: '#F43F5E', cockpit: '#FECDD3', rcs: '#FB7185', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 14, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
     standard: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 18, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
@@ -56,6 +55,11 @@ const waveBanner = $('wave-banner');
 const bannerTitle = $('banner-title');
 const bannerSubtitle = $('banner-subtitle');
 const shieldCdText = $('shield-cd-text');
+const backupCdText = $('backup-cd-text');
+const btnShield = $('btn-shield');
+const btnBackup = $('btn-backup');
+const startScreen = $('start-screen');
+const startBtn = $('start-btn');
 
 // ================= STATE =================
 const keys = {};
@@ -66,9 +70,10 @@ const meteors = [];
 const pickups = [];
 const cam = { x: 0, y: 0 };
 
+let gameStarted = false;
 let currentWave = 1;
-let waveState = 'PLAYING'; // 'PLAYING', 'CLEARED', 'SPAWNING'
-let waveClearTime = 0;
+let waveState = 'PLAYING';
+let backupCdUntil = 0;
 
 // ================= UTIL =================
 function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; } }
@@ -86,7 +91,7 @@ function resolveCollision(a, b, restitution = 0.75) {
     const total = a.mass + b.mass;
 
     a.x -= nx * overlap * (b.mass / total);
-    a.y -= ny * overlap * (b.mass / total);
+    a.y -= ny * overlap * (a.mass / total);
     b.x += nx * overlap * (a.mass / total);
     b.y += ny * overlap * (a.mass / total);
 
@@ -216,8 +221,10 @@ class Ship {
         if (now >= this.shieldCdUntil) {
             this.shieldUntil = now + SHIELD_DURATION;
             this.shieldCdUntil = now + SHIELD_COOLDOWN;
-            createExplosion(this.x, this.y, 8);
+            createExplosion(this.x, this.y, 12);
+            return true;
         }
+        return false;
     }
 
     readKeys() {
@@ -230,25 +237,42 @@ class Ship {
             shoot: !!k.Space,
         };
 
-        if (k.KeyE) this.activateShield();
+        if (k.KeyE) {
+            this.activateShield();
+            keys.KeyE = false;
+        }
+
+        if (k.KeyR) {
+            requestBackup();
+            keys.KeyR = false;
+        }
 
         if (joy.active && Math.hypot(joy.dx, joy.dy) > 0.25) {
             let diff = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI - this.angle;
             while (diff < -180) diff += 360;
             while (diff > 180) diff -= 360;
 
-            const pd = diff - this.vAngle * 10;
-            if (pd < -4) this.input.left = true;
-            else if (pd > 4) this.input.right = true;
-
             const absDiff = Math.abs(diff);
+
             if (absDiff > 130) {
                 this.input.reverse = true;
                 this.joyHold = 0;
+
+                let revTurnDiff = diff > 0 ? 180 - diff : -180 - diff;
+                if (revTurnDiff < -18) this.input.left = true;
+                else if (revTurnDiff > 18) this.input.right = true;
+
             } else if (absDiff < 50) {
+                const pd = diff - this.vAngle * 10;
+                if (pd < -4) this.input.left = true;
+                else if (pd > 4) this.input.right = true;
+
                 this.joyHold = (this.joyHold || 0) + 1;
                 if (this.joyHold > 12) this.input.thrust = true;
             } else {
+                const pd = diff - this.vAngle * 10;
+                if (pd < -4) this.input.left = true;
+                else if (pd > 4) this.input.right = true;
                 this.joyHold = 0;
             }
         } else {
@@ -309,7 +333,7 @@ class Ship {
         while (diff < -180) diff += 360;
         while (diff > 180) diff -= 360;
 
-        if (Math.abs(diff) > 6) { i.left = diff < 0; i.right = fd > 0; }
+        if (Math.abs(diff) > 6) { i.left = diff < 0; i.right = diff > 0; }
         if (pk) { if (Math.abs(diff) < 40) i.thrust = true; return; }
         if (dist > 320) i.thrust = true;
         else if (dist < 180) i.reverse = true;
@@ -387,7 +411,7 @@ class Ship {
         const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
         if (isShieldActive) {
             createExplosion(this.x, this.y, 2);
-            return; // Shield menyerap damage sepenuhnya
+            return;
         }
 
         if (this.invuln || this.dead || amount <= 0) return;
@@ -492,15 +516,28 @@ class Ship {
 
             setTxt($('hud-status-mini'), `${Math.round(this.hull)}% HP · ${ammoTxt}${isMulti ? ' [MULTI]' : ''}`);
 
-            // Update Shield CD Button Text
+            // UI Button Shield & CD
             const now = performance.now();
             if (now < this.shieldUntil) {
                 setTxt(shieldCdText, `${Math.ceil((this.shieldUntil - now) / 1000)}s`);
+                if (btnShield) btnShield.style.opacity = '1';
             } else if (now < this.shieldCdUntil) {
                 setTxt(shieldCdText, `${Math.ceil((this.shieldCdUntil - now) / 1000)}s`);
+                if (btnShield) btnShield.style.opacity = '0.4';
             } else {
                 setTxt(shieldCdText, 'READY');
+                if (btnShield) btnShield.style.opacity = '1';
             }
+
+            // UI Button Backup & CD
+            if (now < backupCdUntil) {
+                setTxt(backupCdText, `${Math.ceil((backupCdUntil - now) / 1000)}s`);
+                if (btnBackup) btnBackup.style.opacity = '0.4';
+            } else {
+                setTxt(backupCdText, 'READY');
+                if (btnBackup) btnBackup.style.opacity = '1';
+            }
+
         } else if (this.hud) {
             this.hud.style.transform = `translate(${sx - 28}px, ${sy - H / 2 - 16}px)`;
             setW(this.hudBar, `${(this.hull / this.maxHp) * 100}%`);
@@ -519,13 +556,27 @@ function showStatus(text, colorClass) {
     if (gameOverBox) gameOverBox.classList.remove('hidden');
 }
 
+function requestBackup() {
+    if (!gameStarted || player.dead) return;
+    const now = performance.now();
+    if (now < backupCdUntil) return;
+
+    // Cooldown memanjang seiring peningkatan level/wave musuh (15s base + 5s per level tambahan)
+    const cdDuration = 15000 + (currentWave - 1) * 5000;
+    backupCdUntil = now + cdDuration;
+
+    // Tipe kawan bantuan disesuaikan dengan tingkat kesulitan Wave
+    const allyType = currentWave >= 5 ? 'heavy' : currentWave >= 3 ? 'standard' : 'scout';
+    spawnBot('blue', allyType);
+    createExplosion(player.x, player.y, 10);
+}
+
 function startWave(waveNum) {
     currentWave = waveNum;
     waveState = 'PLAYING';
     if (waveCount) waveCount.textContent = currentWave;
     if (waveBanner) waveBanner.classList.add('hidden');
 
-    // Formula Komposisi Musuh
     let scoutCount = Math.floor(waveNum / 2);
     let heavyCount = Math.floor((waveNum - 1) / 3);
     let standardCount = Math.max(1, waveNum - scoutCount - heavyCount);
@@ -539,22 +590,26 @@ function checkWaveProgress() {
     const enemiesLeft = ships.filter(s => !s.dead && s.team !== PLAYER_TEAM).length;
     if (enemiesLeft === 0 && waveState === 'PLAYING') {
         waveState = 'CLEARED';
-        waveClearTime = performance.now();
 
         if (bannerTitle) bannerTitle.textContent = `WAVE ${currentWave} CLEARED!`;
         if (bannerSubtitle) bannerSubtitle.textContent = `Persiapan untuk Wave ${currentWave + 1}...`;
         if (waveBanner) waveBanner.classList.remove('hidden');
 
         setTimeout(() => {
-            if (!player.dead) startWave(currentWave + 1);
+            if (!player.dead && gameStarted) startWave(currentWave + 1);
         }, 3000);
     }
 }
 
 function spawnBot(team, botType = 'standard') {
-    const rx = 0.05 + Math.random() * 0.9;
+    const isAlly = team === PLAYER_TEAM;
+    const rx = isAlly ? 0.3 + Math.random() * 0.4 : 0.05 + Math.random() * 0.9;
     const bot = new Ship(team, false, botType);
-    bot.reset(cam.x + window.innerWidth * rx, cam.y + window.innerHeight * (0.15 + Math.random() * 0.7), 90);
+    bot.reset(
+        cam.x + window.innerWidth * rx,
+        cam.y + window.innerHeight * (isAlly ? 0.2 : 0.8),
+        isAlly ? 0 : 90
+    );
     ships.push(bot);
     if (!player.dead && gameOverBox) gameOverBox.classList.add('hidden');
 }
@@ -563,12 +618,14 @@ function resetGame() {
     [...ships].forEach(s => { if (!s.isPlayer) s.remove(); });
     player.reset(0, 0, 0); updateCamera();
 
+    backupCdUntil = 0;
     Object.keys(keys).forEach(k => keys[k] = false);
     bullets.forEach(b => { if (b.el) b.el.remove(); }); bullets.length = 0;
     meteors.forEach(m => { if (m.el) m.el.remove(); }); meteors.length = 0;
     pickups.forEach(k => { if (k.el) k.el.remove(); }); pickups.length = 0;
 
     if (gameOverBox) gameOverBox.classList.add('hidden');
+    gameStarted = true;
     startWave(1);
 }
 
@@ -710,30 +767,33 @@ function updatePickups() {
 
 // ================= GAME LOOP =================
 function gameLoop(ts) {
-    if (Math.random() < 0.03) spawnMeteor();
+    if (gameStarted) {
+        if (Math.random() < 0.03) spawnMeteor();
 
-    for (const s of [...ships]) {
-        if (s.dead) continue;
-        s.isPlayer ? s.readKeys() : s.ai();
-        s.step(ts);
-    }
+        for (const s of [...ships]) {
+            if (s.dead) continue;
+            s.isPlayer ? s.readKeys() : s.ai();
+            s.step(ts);
+        }
 
-    const live = ships.filter(s => !s.dead);
-    for (let i = 0; i < live.length; i++) {
-        for (let j = i + 1; j < live.length; j++) {
-            const imp = resolveCollision(live[i], live[j], 0.8);
-            if (imp > 0) {
-                live[i].takeDamage(Math.round(imp * 1.5));
-                live[j].takeDamage(Math.round(imp * 1.5));
+        const live = ships.filter(s => !s.dead);
+        for (let i = 0; i < live.length; i++) {
+            for (let j = i + 1; j < live.length; j++) {
+                const imp = resolveCollision(live[i], live[j], 0.8);
+                if (imp > 0) {
+                    live[i].takeDamage(Math.round(imp * 1.5));
+                    live[j].takeDamage(Math.round(imp * 1.5));
+                }
             }
         }
+
+        updatePickups();
+        updateBullets();
+        updateMeteors();
     }
 
     updateCamera();
     updateBackground();
-    updatePickups();
-    updateBullets();
-    updateMeteors();
     ships.forEach(s => s.render());
     updateEffects();
     updateCounts();
@@ -855,18 +915,30 @@ function updateCounts() {
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') e.preventDefault();
     keys[e.code] = true;
+    if (e.code === 'KeyE' && player) player.activateShield();
+    if (e.code === 'KeyR') requestBackup();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-// Kontrol Tombol On-Screen (THRUST, SHIELD & FIRE)
+// Kontrol Tombol On-Screen (THRUST, SHIELD, BACKUP & FIRE)
 document.querySelectorAll('[data-key]').forEach(btn => {
     const code = btn.dataset.key;
-    const set = (v) => (e) => { e.preventDefault(); keys[code] = v; btn.style.opacity = v ? '1' : '0.7'; };
+    const set = (v) => (e) => { 
+        e.preventDefault(); 
+        keys[code] = v; 
+        if (v) {
+            if (code === 'KeyE' && player) player.activateShield();
+            if (code === 'KeyR') requestBackup();
+        }
+    };
     btn.addEventListener('pointerdown', (e) => { btn.setPointerCapture(e.pointerId); set(true)(e); });
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => btn.addEventListener(ev, set(false)));
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
-    btn.style.opacity = '0.7';
 });
+
+// Direct Touch Binding untuk Shield & Backup
+if (btnShield) btnShield.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player) player.activateShield(); });
+if (btnBackup) btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); requestBackup(); });
 
 // ================= JOYSTICK VIRTUAL (MULTI-TOUCH) =================
 const joyBase = $('joy-base'), joyKnob = $('joy-knob');
@@ -986,10 +1058,18 @@ if (canFullscreen && window.matchMedia('(pointer: coarse)').matches) {
     document.addEventListener('pointerup', goFullscreen, { once: true });
 }
 
+// Tombol START & RESTART
+if (startBtn && startScreen) {
+    startBtn.addEventListener('click', () => {
+        startScreen.classList.add('hidden');
+        gameStarted = true;
+        startWave(1);
+    });
+}
+
 const resetBtn = $('reset-btn');
 if (resetBtn) resetBtn.addEventListener('click', (e) => { resetGame(); e.currentTarget.blur(); });
 
 player.reset(0, 0, 0); updateCamera();
-startWave(1);
 requestAnimationFrame(gameLoop);
 
