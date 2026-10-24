@@ -261,44 +261,54 @@ class Ship {
             keys.KeyR = false;
         }
 
-        // ================= LOGIKA JOYSTICK VIRTUAL =================
+        // ================= LOGIKA JOYSTICK VIRTUAL (SHIP-RELATIVE) =================
         const joyDist = Math.hypot(joy.dx, joy.dy);
-        if (joy.active && joyDist > 0.2) {
+        if (joy.active && joyDist > 0.25) {
+            // Sudut tarikan joystick di layar (0° = Atas, 90° = Kanan, 180°/-180° = Bawah, -90° = Kiri)
             let joyAngle = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI;
 
-            // 1. ZONA MUNDUR (Ditarik ke belakang / joy.dy < 0)
-            if (joy.dy < 0) {
-                this.input.reverse = true;
+            // Selisih sudut antara joystick dan MONCONG DEPAN pesawat
+            let diffFwd = joyAngle - this.angle;
+            while (diffFwd < -180) diffFwd += 360;
+            while (diffFwd > 180) diffFwd -= 360;
+
+            const absDiffFwd = Math.abs(diffFwd);
+
+            // 1. ZONA MUNDUR (REV): Ditarik berlawanan/ke area belakang pesawat (> 90° dari moncong)
+            if (absDiffFwd > 90) {
+                this.input.reverse = true; // Kunci pendorong REV
+                this.input.thrust = false;  // Matikan Main Engine total
                 this.joyHold = 0;
 
+                // Hitung selisih sudut terhadap BUNTUT pesawat (this.angle + 180)
                 let diffRear = joyAngle - (this.angle + 180);
                 while (diffRear < -180) diffRear += 360;
                 while (diffRear > 180) diffRear -= 360;
 
+                // Kemudikan buntut pesawat (RCS) menyelaraskan ke arah joystick saat mundur
                 if (diffRear < -8) this.input.left = true;
                 else if (diffRear > 8) this.input.right = true;
 
             } else {
-                // 2. ZONA DEPAN (joy.dy >= 0)
-                let diffFwd = joyAngle - this.angle;
-                while (diffFwd < -180) diffFwd += 360;
-                while (diffFwd > 180) diffFwd -= 360;
-
+                // 2. ZONA DEPAN (MAJU & PUTAR): Joystick ditarik ke area depan pesawat (<= 90°)
                 let pd = diffFwd - this.vAngle * 10;
                 if (pd < -4) this.input.left = true;
                 else if (pd > 4) this.input.right = true;
 
-                // Deteksi putaran cepat joystick
+                // Deteksi kecepatan putaran joystick
                 let joyAngleDelta = joyAngle - (this.lastJoyAngle || joyAngle);
                 while (joyAngleDelta < -180) joyAngleDelta += 360;
                 while (joyAngleDelta > 180) joyAngleDelta -= 360;
 
-                const isRotatingFast = Math.abs(joyAngleDelta) > 3.5;
+                const isRotatingFast = Math.abs(joyAngleDelta) > 3.0; // True jika joystick sedang diputar
 
-                // 3. THRUST MAIN ENGINE (Wajib dorong > 50%, tidak diputar cepat, dan sudah searah)
-                if (joy.dy > 0.5 && !isRotatingFast && Math.abs(diffFwd) < 35) {
+                // MAIN ENGINE menyala HANYA jika:
+                // - Joystick didorong lebih dari 45% (joyDist > 0.45)
+                // - Putaran joystick sudah berhenti/stabil (!isRotatingFast)
+                // - Moncong pesawat sudah hampir lurus dengan arah joystick (< 30°)
+                if (joyDist > 0.45 && !isRotatingFast && absDiffFwd < 30) {
                     this.joyHold = (this.joyHold || 0) + 1;
-                    if (this.joyHold > 4) {
+                    if (this.joyHold > 5) { // Hold beberapa frame baru Main Engine menyala
                         this.input.thrust = true;
                     }
                 } else {
