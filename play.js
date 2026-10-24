@@ -48,7 +48,7 @@ const STATS = {
     player: { turn: 0.38, main: 0.25, rev: 0.1, rcsUse: 0, mainUse: 0, mainRegen: 1, cooldown: 120, wallDamage: true, magSize: 100, startMags: 2, maxMags: 5, reload: 1500 },
 };
 
-// ================= DOM HUD PLAYER & PAUSE =================
+// ================= DOM HUD PLAYER & CONTROLS =================
 const $ = (id) => document.getElementById(id);
 const gameOverBox = $('game-over-box');
 const statusTitle = $('status-title');
@@ -66,6 +66,9 @@ const btnShield = $('btn-shield');
 const btnBackup = $('btn-backup');
 const btnSpeed = $('btn-speed');
 const speedText = $('speed-text');
+const speedSliderBox = $('speed-slider-box');
+const speedSlider = $('speed-slider');
+const sliderValText = $('slider-val-text');
 const startScreen = $('start-screen');
 const startBtn = $('start-btn');
 
@@ -92,10 +95,7 @@ let isPaused = false;
 let currentWave = 1;
 let waveState = 'PLAYING';
 let backupCdUntil = 0;
-
-// OPSI KECEPATAN PLAYER (100%, 60%, 30%)
-const SPEED_MODES = [1.0, 0.6, 0.3];
-let currentSpeedIdx = 0;
+let playerSpeedFactor = 1.0;
 
 // ================= UTIL =================
 function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; } }
@@ -172,12 +172,6 @@ function checkOrientationPause() {
 }
 window.addEventListener('resize', checkOrientationPause);
 
-function toggleSpeedMode() {
-    currentSpeedIdx = (currentSpeedIdx + 1) % SPEED_MODES.length;
-    const speedPct = Math.round(SPEED_MODES[currentSpeedIdx] * 100);
-    if (speedText) speedText.textContent = `${speedPct}%`;
-}
-
 // ================= KOMPONEN: SHIP =================
 class Ship {
     constructor(team, isPlayer = false, botType = 'standard') {
@@ -230,13 +224,14 @@ class Ship {
         const el = document.createElement('div');
         el.className = 'fixed left-0 top-0 w-10 h-12 pointer-events-none z-10';
         el.style.willChange = 'transform';
-        // Hanya gambar kapal bersih tanpa visual RCS & Thruster
+        // Gambar kapal bersih tanpa visual RCS/Thruster.
+        // Skala SVG 1:1 (40x48), Titik Pusat di (20,24), Moncong di (20,6) -> Jarak 18px
         el.innerHTML = `
         <div data-fx="shield-aura" class="absolute -inset-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
-        <svg viewBox="-8 -6 40 42" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
+        <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
              style="filter:drop-shadow(0 0 8px rgba(${c.glow},0.8))">
-            <path d="M12 2L24 26L12 21L0 26L12 2Z" fill="${c.body}"/>
-            <path d="M12 6L16 16L12 14L8 16L12 6Z" fill="${c.cockpit}"/>
+            <path d="M20 6 L36 42 L20 36 L4 42 Z" fill="${c.body}"/>
+            <path d="M20 12 L25 26 L20 23 L15 26 Z" fill="${c.cockpit}"/>
         </svg>`;
         document.body.appendChild(el);
         this.el = el;
@@ -306,11 +301,6 @@ class Ship {
         if (k.KeyR) {
             requestBackup();
             keys.KeyR = false;
-        }
-
-        if (k.ShiftLeft || k.ShiftRight || k.KeyZ) {
-            toggleSpeedMode();
-            keys.ShiftLeft = false; keys.ShiftRight = false; keys.KeyZ = false;
         }
 
         // Virtual Joystick Logic
@@ -388,7 +378,7 @@ class Ship {
         }
         for (const s of ships) {
             if (s === this || s.dead) continue;
-            const d = Math.hypot(this.x - s.x, s.y - s.y) || 0.01;
+            const d = Math.hypot(this.x - s.x, this.y - s.y) || 0.01;
             const range = RADIUS * 2 + AVOID_SHIP;
             if (d < range) {
                 const f = (range - d) / range;
@@ -426,7 +416,7 @@ class Ship {
 
     step(ts) {
         const p = this.p, i = this.input;
-        const speedFactor = this.isPlayer ? SPEED_MODES[currentSpeedIdx] : 1.0;
+        const speedFactor = this.isPlayer ? playerSpeedFactor : 1.0;
 
         if (this.isPlayer) {
             this.rcs = MAX_FUEL;
@@ -483,10 +473,10 @@ class Ship {
         const isHoming = !!(this.homingUntil && now < this.homingUntil);
         const isMulti = !!(this.multishotUntil && now < this.multishotUntil);
 
-        // Posisi moncong terkalibrasi tepat di ujung atas moncong kapal (24px dari pusat)
+        // Moncong kapal tepat berada di jarak 18px dari pusat rotasi kapal
         const rad = (this.angle * Math.PI) / 180;
-        const spawnX = this.x + Math.sin(rad) * 24;
-        const spawnY = this.y + Math.cos(rad) * 24;
+        const spawnX = this.x + Math.sin(rad) * 18;
+        const spawnY = this.y + Math.cos(rad) * 18;
 
         if (isLaser) {
             const el = document.createElement('div');
@@ -502,8 +492,8 @@ class Ship {
             [-8, 8].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const r = (ang * Math.PI) / 180;
-                const sx = this.x + Math.sin(r) * 22;
-                const sy = this.y + Math.cos(r) * 22;
+                const sx = this.x + Math.sin(r) * 18;
+                const sy = this.y + Math.cos(r) * 18;
                 const el = document.createElement('div');
                 el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:14px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
                 document.body.appendChild(el);
@@ -517,8 +507,8 @@ class Ship {
         } else if (isMulti) {
             [this.angle - 12, this.angle, this.angle + 12].forEach(ang => {
                 const r = (ang * Math.PI) / 180;
-                const sx = this.x + Math.sin(r) * 22;
-                const sy = this.y + Math.cos(r) * 22;
+                const sx = this.x + Math.sin(r) * 18;
+                const sy = this.y + Math.cos(r) * 18;
                 const el = document.createElement('div');
                 el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
                 document.body.appendChild(el);
@@ -863,7 +853,6 @@ function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
 
-        // Simpan riwayat posisi untuk jejak ekor peluru (trail)
         if (!b.trail) b.trail = [];
         b.trail.push({ x: b.x, y: b.y });
         if (b.trail.length > 6) b.trail.shift();
@@ -1147,7 +1136,6 @@ window.addEventListener('keydown', (e) => {
     if (!isPaused) {
         if (e.code === 'KeyE' && player) player.activateShield();
         if (e.code === 'KeyR') requestBackup();
-        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyZ') toggleSpeedMode();
     }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1174,9 +1162,31 @@ if (btnShield) {
 if (btnBackup) {
     btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!isPaused) requestBackup(); });
 }
-if (btnSpeed) {
-    btnSpeed.addEventListener('pointerdown', (e) => { e.preventDefault(); toggleSpeedMode(); });
+
+// LOGIKA SLIDER KECEPATAN
+if (btnSpeed && speedSliderBox) {
+    btnSpeed.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        speedSliderBox.classList.toggle('hidden');
+    });
 }
+
+if (speedSlider) {
+    speedSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        playerSpeedFactor = val / 100;
+        if (speedText) speedText.textContent = `${val}%`;
+        if (sliderValText) sliderValText.textContent = `${val}%`;
+    });
+}
+
+// Menutup popup slider jika menyentuh area luar
+window.addEventListener('pointerdown', (e) => {
+    if (speedSliderBox && !speedSliderBox.contains(e.target) && e.target !== btnSpeed && !btnSpeed.contains(e.target)) {
+        speedSliderBox.classList.add('hidden');
+    }
+});
 
 if (pauseBtn) {
     pauseBtn.addEventListener('click', (e) => { e.preventDefault(); togglePause(); });
