@@ -37,6 +37,12 @@ const BOT_TYPES = {
     heavy: { body: '#991B1B', cockpit: '#F87171', rcs: '#DC2626', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 24, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
 };
 
+const ALLY_BOT_COLORS = {
+    scout: { body: '#38BDF8', cockpit: '#BAE6FD', rcs: '#0284C7', glow: '56,189,248', bullet: '#38bdf8' },
+    standard: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
+    heavy: { body: '#1D4ED8', cockpit: '#93C5FD', rcs: '#2563EB', glow: '29,78,216', bullet: '#60a5fa' },
+};
+
 const STATS = {
     player: { turn: 0.35, main: 0.25, rev: 0.08, rcsUse: 0.4, mainUse: 0.5, mainRegen: 0.25, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
 };
@@ -127,13 +133,20 @@ class Ship {
         this.team = team;
         this.isPlayer = isPlayer;
         this.botType = botType;
-        this.c = isPlayer ? TEAMS[team] : {
-            body: BOT_TYPES[botType].body,
-            cockpit: BOT_TYPES[botType].cockpit,
-            rcs: BOT_TYPES[botType].rcs,
-            glow: BOT_TYPES[botType].glow,
-            bullet: BOT_TYPES[botType].bullet,
-        };
+
+        if (isPlayer) {
+            this.c = TEAMS[team];
+        } else if (team === PLAYER_TEAM) {
+            this.c = ALLY_BOT_COLORS[botType] || ALLY_BOT_COLORS.standard;
+        } else {
+            this.c = {
+                body: BOT_TYPES[botType].body,
+                cockpit: BOT_TYPES[botType].cockpit,
+                rcs: BOT_TYPES[botType].rcs,
+                glow: BOT_TYPES[botType].glow,
+                bullet: BOT_TYPES[botType].bullet,
+            };
+        }
         
         this.p = isPlayer ? STATS.player : {
             turn: BOT_TYPES[botType].turn,
@@ -565,7 +578,7 @@ function requestBackup() {
     backupCdUntil = now + cdDuration;
 
     const allyType = currentWave >= 5 ? 'heavy' : currentWave >= 3 ? 'standard' : 'scout';
-    spawnBot('blue', allyType);
+    spawnBot(PLAYER_TEAM, allyType);
     createExplosion(player.x, player.y, 10);
 }
 
@@ -1060,7 +1073,7 @@ if (canFullscreen && window.matchMedia('(pointer: coarse)').matches) {
     document.addEventListener('pointerup', goFullscreen, { once: true });
 }
 
-// Handler Khusus Start Mission & Restart (Gunakan Pointerdown & Click)
+// Handler Khusus Start Mission & Restart
 function handleStartMission(e) {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     if (gameStarted) return;
