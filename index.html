@@ -48,11 +48,11 @@
         <div class="bg-gray-900 border border-cyan-500/40 p-6 rounded-xl max-w-sm w-full text-center space-y-4 shadow-2xl shadow-cyan-900/30">
             <h1 class="text-2xl font-black text-cyan-400 tracking-wider uppercase">Space Shooter</h1>
             <div class="text-xs text-gray-300 space-y-2 text-left bg-gray-950/60 p-3 rounded-lg border border-gray-800">
-                <p>• <span class="text-orange-400 font-bold">Tombol REV / [S]</span>: Mundur Sambil Menembak</p>
-                <p>• <span class="text-orange-400 font-bold">Tombol THRUST / [W]</span>: Akselerasi Maju</p>
-                <p>• <span class="text-cyan-400 font-bold">Tombol SHIELD / [E]</span>: Kebal Serangan 5s</p>
-                <p>• <span class="text-blue-400 font-bold">Tombol BACKUP / [R]</span>: Panggil Bantuan</p>
-                <p>• <span class="text-pink-400 font-bold">Sistem Nyawa</span>: Auto Respawn + Perisai Darurat</p>
+                <p>• <span class="text-orange-400 font-bold">Joystick Belakang</span>: Mundur (REV)</p>
+                <p>• <span class="text-orange-400 font-bold">Tombol THRUST</span>: Akselerasi Maju</p>
+                <p>• <span class="text-cyan-400 font-bold">Tombol SHIELD (E)</span>: Kebal Serangan 5s</p>
+                <p>• <span class="text-blue-400 font-bold">Tombol BACKUP (R)</span>: Panggil Bantuan</p>
+                <p>• <span class="text-teal-400 font-bold">Item MULTI</span>: Tembakan 3 Arah</p>
             </div>
             <button id="start-btn" class="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm rounded-lg transition-all shadow-lg shadow-cyan-600/40 cursor-pointer uppercase tracking-wider touch-none select-none active:scale-95">
                 START MISSION
@@ -66,10 +66,7 @@
             <!-- Mini Bar Header -->
             <div id="hud-toggle" class="flex justify-between items-center cursor-pointer select-none">
                 <div class="overflow-hidden">
-                    <div class="flex items-center gap-2">
-                        <p class="text-blue-400 font-bold text-[11px] uppercase tracking-wide">PLAYER 1</p>
-                        <span id="lives-display" class="text-[12px]">❤️❤️❤️</span>
-                    </div>
+                    <p class="text-blue-400 font-bold text-[11px] uppercase tracking-wide">PLAYER 1 (BIRU)</p>
                     <p id="hud-status-mini" class="text-[10px] text-green-400 font-semibold truncate">100% HP · 20/20</p>
                 </div>
                 <span id="hud-arrow" class="text-xs text-gray-400 ml-1 transition-transform duration-200">▼</span>
@@ -126,7 +123,7 @@
             </div>
             <button id="reset-btn"
                 class="w-full py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded transition-all cursor-pointer touch-none select-none">
-                ULANG WAVE
+                RESTART MISSION
             </button>
         </div>
     </div>
@@ -157,19 +154,17 @@
             </div>
         </div>
 
-        <!-- Tombol Tambahan di Kiri (REV, THRUST, SHIELD & BACKUP) -->
-        <div class="fixed bottom-6 left-44 z-40 flex gap-1.5">
-            <button data-key="ArrowDown"
-                class="touch-none select-none rounded-full border border-orange-500/50 bg-orange-700/40 text-white font-bold flex items-center justify-center w-13 h-13 text-[10px] active:scale-90">REV</button>
+        <!-- Tombol Tambahan di Kiri (THRUST, SHIELD & BACKUP) -->
+        <div class="fixed bottom-6 left-48 z-40 flex gap-2">
             <button data-key="ArrowUp"
-                class="touch-none select-none rounded-full border border-orange-400/50 bg-orange-600/30 text-white font-bold flex items-center justify-center w-13 h-13 text-[10px] active:scale-90">THRUST</button>
+                class="touch-none select-none rounded-full border border-orange-400/50 bg-orange-600/30 text-white font-bold flex items-center justify-center w-14 h-14 text-[10px]">THRUST</button>
             <button id="btn-shield" data-key="KeyE"
-                class="touch-none select-none rounded-full border border-cyan-400/50 bg-cyan-600/30 text-white font-bold flex flex-col items-center justify-center w-13 h-13 text-[9px] active:scale-90">
+                class="touch-none select-none rounded-full border border-cyan-400/50 bg-cyan-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px]">
                 <span>SHIELD</span>
                 <span id="shield-cd-text" class="text-[8px] text-cyan-300">READY</span>
             </button>
             <button id="btn-backup" data-key="KeyR"
-                class="touch-none select-none rounded-full border border-blue-400/50 bg-blue-600/30 text-white font-bold flex flex-col items-center justify-center w-13 h-13 text-[9px] active:scale-90">
+                class="touch-none select-none rounded-full border border-blue-400/50 bg-blue-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px]">
                 <span>BACKUP</span>
                 <span id="backup-cd-text" class="text-[8px] text-blue-300">READY</span>
             </button>
@@ -178,7 +173,7 @@
         <!-- Tombol FIRE di Kanan -->
         <div class="fixed bottom-6 right-6 z-40">
             <button data-key="Space"
-                class="touch-none select-none rounded-full border border-red-400/50 bg-red-600/30 text-white font-bold flex items-center justify-center w-24 h-24 text-sm active:scale-95">FIRE</button>
+                class="touch-none select-none rounded-full border border-red-400/50 bg-red-600/30 text-white font-bold flex items-center justify-center w-24 h-24 text-sm">FIRE</button>
         </div>
 
         <button id="fs-btn"

@@ -1,6 +1,5 @@
 // ================= KONSTANTA =================
 const PLAYER_TEAM = 'blue';
-const MAX_LIVES = 3;
 const W = 40, H = 48, RADIUS = 18, MASS = 25;
 const MAX_FUEL = 100, BOOST_MAX_FUEL = 160, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
@@ -45,7 +44,7 @@ const ALLY_BOT_COLORS = {
 };
 
 const STATS = {
-    player: { turn: 0.35, main: 0.25, rev: 0.1, rcsUse: 0.4, mainUse: 0.5, mainRegen: 0.25, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
+    player: { turn: 0.38, main: 0.25, rev: 0.1, rcsUse: 0.4, mainUse: 0.5, mainRegen: 0.25, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
 };
 
 // ================= DOM HUD PLAYER =================
@@ -56,7 +55,6 @@ const hullBar = $('hull-bar'), hullText = $('hull-text');
 const mainFuelBar = $('main-fuel-bar'), mainFuelText = $('main-fuel-text');
 const rcsFuelBar = $('rcs-fuel-bar'), rcsFuelText = $('rcs-fuel-text');
 const ammoBar = $('ammo-bar'), ammoText = $('ammo-text');
-const livesDisplay = $('lives-display');
 const enemyCount = $('enemy-count'), allyCount = $('ally-count');
 const waveCount = $('wave-count');
 const waveBanner = $('wave-banner');
@@ -135,7 +133,6 @@ class Ship {
         this.team = team;
         this.isPlayer = isPlayer;
         this.botType = botType;
-        this.lives = isPlayer ? MAX_LIVES : 1;
 
         if (isPlayer) {
             this.c = TEAMS[team];
@@ -166,6 +163,7 @@ class Ship {
         this.maxHp = isPlayer ? MAX_HULL : BOT_TYPES[botType].hp;
 
         this.joyHold = 0;
+        this.lastJoyAngle = 0;
         this.shieldUntil = 0;
         this.shieldCdUntil = 0;
         this.multishotUntil = 0;
@@ -222,23 +220,25 @@ class Ship {
             hull: this.maxHp, main: MAX_FUEL, rcs: MAX_FUEL,
             mainEmpty: false, rcsEmpty: false,
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
-            dead: false, invuln: false, lastShot: 0, boostUntil: 0, joyHold: 0,
+            dead: false, invuln: false, lastShot: 0, boostUntil: 0, joyHold: 0, lastJoyAngle: 0,
             shieldUntil: 0, shieldCdUntil: 0, multishotUntil: 0,
             input: {}, fx: {},
         });
-        if (this.isPlayer) this.lives = MAX_LIVES;
         if (this.el) {
             this.el.classList.remove('hidden');
             this.el.style.opacity = '1';
         }
     }
 
-    activateShield(duration = SHIELD_DURATION) {
+    activateShield() {
         const now = performance.now();
-        this.shieldUntil = now + duration;
-        this.shieldCdUntil = now + SHIELD_COOLDOWN;
-        createExplosion(this.x, this.y, 12);
-        return true;
+        if (now >= this.shieldCdUntil) {
+            this.shieldUntil = now + SHIELD_DURATION;
+            this.shieldCdUntil = now + SHIELD_COOLDOWN;
+            createExplosion(this.x, this.y, 12);
+            return true;
+        }
+        return false;
     }
 
     readKeys() {
@@ -252,8 +252,7 @@ class Ship {
         };
 
         if (k.KeyE) {
-            const now = performance.now();
-            if (now >= this.shieldCdUntil) this.activateShield();
+            this.activateShield();
             keys.KeyE = false;
         }
 
@@ -262,22 +261,55 @@ class Ship {
             keys.KeyR = false;
         }
 
-        if (joy.active && Math.hypot(joy.dx, joy.dy) > 0.25) {
-            let diff = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI - this.angle;
-            while (diff < -180) diff += 360;
-            while (diff > 180) diff -= 360;
+        // ================= LOGIKA JOYSTICK VIRTUAL =================
+        const joyDist = Math.hypot(joy.dx, joy.dy);
+        if (joy.active && joyDist > 0.2) {
+            let joyAngle = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI;
 
-            const pd = diff - this.vAngle * 10;
-            if (pd < -4) this.input.left = true;
-            else if (pd > 4) this.input.right = true;
+            // 1. ZONA MUNDUR (Ditarik ke belakang / joy.dy < 0)
+            if (joy.dy < 0) {
+                this.input.reverse = true;
+                this.joyHold = 0;
 
-            // Jika tidak menekan tombol REV manual, jalankan thrust maju otomatis saat joystick didorong
-            if (!this.input.reverse) {
-                this.joyHold = (this.joyHold || 0) + 1;
-                if (this.joyHold > 10) this.input.thrust = true;
+                let diffRear = joyAngle - (this.angle + 180);
+                while (diffRear < -180) diffRear += 360;
+                while (diffRear > 180) diffRear -= 360;
+
+                if (diffRear < -8) this.input.left = true;
+                else if (diffRear > 8) this.input.right = true;
+
+            } else {
+                // 2. ZONA DEPAN (joy.dy >= 0)
+                let diffFwd = joyAngle - this.angle;
+                while (diffFwd < -180) diffFwd += 360;
+                while (diffFwd > 180) diffFwd -= 360;
+
+                let pd = diffFwd - this.vAngle * 10;
+                if (pd < -4) this.input.left = true;
+                else if (pd > 4) this.input.right = true;
+
+                // Deteksi putaran cepat joystick
+                let joyAngleDelta = joyAngle - (this.lastJoyAngle || joyAngle);
+                while (joyAngleDelta < -180) joyAngleDelta += 360;
+                while (joyAngleDelta > 180) joyAngleDelta -= 360;
+
+                const isRotatingFast = Math.abs(joyAngleDelta) > 3.5;
+
+                // 3. THRUST MAIN ENGINE (Wajib dorong > 50%, tidak diputar cepat, dan sudah searah)
+                if (joy.dy > 0.5 && !isRotatingFast && Math.abs(diffFwd) < 35) {
+                    this.joyHold = (this.joyHold || 0) + 1;
+                    if (this.joyHold > 4) {
+                        this.input.thrust = true;
+                    }
+                } else {
+                    this.joyHold = 0;
+                }
             }
+
+            this.lastJoyAngle = joyAngle;
         } else {
             this.joyHold = 0;
+            this.lastJoyAngle = 0;
         }
     }
 
@@ -426,26 +458,12 @@ class Ship {
     }
 
     destroy() {
+        this.dead = true;
         createExplosion(this.x, this.y, 36);
-
         if (this.isPlayer) {
-            this.lives--;
-            if (this.lives > 0) {
-                // Auto Respawn jika masih ada nyawa
-                this.hull = this.maxHp;
-                this.main = MAX_FUEL;
-                this.rcs = MAX_FUEL;
-                this.ammo = this.p.magSize;
-                this.reloadUntil = 0;
-                this.activateShield(3000); // Shield Darurat 3 detik saat Respawn
-            } else {
-                // Mati total ketika nyawa habis
-                this.dead = true;
-                if (this.el) this.el.classList.add('hidden');
-                showStatus(`GAME OVER! WAVE ${currentWave}`, 'text-red-500');
-            }
+            if (this.el) this.el.classList.add('hidden');
+            showStatus('YOU LOST! GESER: ARAH / WASD', 'text-red-500');
         } else {
-            this.dead = true;
             this.remove();
             checkWaveProgress();
         }
@@ -531,13 +549,6 @@ class Ship {
 
             setTxt($('hud-status-mini'), `${Math.round(this.hull)}% HP · ${ammoTxt}${isMulti ? ' [MULTI]' : ''}`);
 
-            // Tampilan Ikon Nyawa
-            if (livesDisplay) {
-                let hearts = '';
-                for (let h = 0; h < this.lives; h++) hearts += '❤️';
-                setTxt(livesDisplay, hearts || '💀');
-            }
-
             // UI Button Shield & CD
             const now = performance.now();
             if (now < this.shieldUntil) {
@@ -597,9 +608,6 @@ function startWave(waveNum) {
     if (waveCount) waveCount.textContent = currentWave;
     if (waveBanner) waveBanner.classList.add('hidden');
 
-    // Bersihkan bot musuh lama jika ada
-    [...ships].forEach(s => { if (!s.isPlayer && s.team !== PLAYER_TEAM) s.remove(); });
-
     let scoutCount = Math.floor(waveNum / 2);
     let heavyCount = Math.floor((waveNum - 1) / 3);
     let standardCount = Math.max(1, waveNum - scoutCount - heavyCount);
@@ -649,7 +657,7 @@ function resetGame() {
 
     if (gameOverBox) gameOverBox.classList.add('hidden');
     gameStarted = true;
-    startWave(currentWave); // Mengulang dari Wave terakhir
+    startWave(1);
 }
 
 // ================= METEOR =================
@@ -721,7 +729,7 @@ function updateMeteors() {
     }
 }
 
-// ================= PELURU =================
+// ================= PELURU (ANTI FRIENDLY FIRE) =================
 function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
@@ -731,6 +739,7 @@ function updateBullets() {
         const sy = window.innerHeight - (b.y - cam.y);
         if (b.el) b.el.style.transform = `translate(${sx - 4}px, ${sy - 8}px) rotate(${b.angle}deg)`;
 
+        // Peluru hanya mengenai tim lawan
         const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
         const out = --b.life <= 0;
 
@@ -803,6 +812,7 @@ function gameLoop(ts) {
         for (let i = 0; i < live.length; i++) {
             for (let j = i + 1; j < live.length; j++) {
                 const imp = resolveCollision(live[i], live[j], 0.8);
+                // Hanya berikan damage jika tabrakan BEDA TIM
                 if (imp > 0 && live[i].team !== live[j].team) {
                     live[i].takeDamage(Math.round(imp * 1.5));
                     live[j].takeDamage(Math.round(imp * 1.5));
@@ -888,6 +898,7 @@ function updateEffects() {
     drawShipIndicators();
 }
 
+// Panah Penunjuk Arah Musuh (Merah) & Ally (Biru) di Luar Layar
 function drawShipIndicators() {
     const w = fxCanvas.width, h = fxCanvas.height, cx = w / 2, cy = h / 2, pad = 28;
     fxCtx.font = 'bold 10px monospace';
@@ -941,25 +952,19 @@ function updateCounts() {
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') e.preventDefault();
     keys[e.code] = true;
-    if (e.code === 'KeyE' && player) {
-        const now = performance.now();
-        if (now >= player.shieldCdUntil) player.activateShield();
-    }
+    if (e.code === 'KeyE' && player) player.activateShield();
     if (e.code === 'KeyR') requestBackup();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-// Kontrol Tombol On-Screen (REV, THRUST, SHIELD, BACKUP & FIRE)
+// Kontrol Tombol On-Screen (THRUST, SHIELD, BACKUP & FIRE)
 document.querySelectorAll('[data-key]').forEach(btn => {
     const code = btn.dataset.key;
     const set = (v) => (e) => { 
         e.preventDefault(); 
         keys[code] = v; 
         if (v) {
-            if (code === 'KeyE' && player) {
-                const now = performance.now();
-                if (now >= player.shieldCdUntil) player.activateShield();
-            }
+            if (code === 'KeyE' && player) player.activateShield();
             if (code === 'KeyR') requestBackup();
         }
     };
@@ -968,14 +973,9 @@ document.querySelectorAll('[data-key]').forEach(btn => {
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
 });
 
+// Direct Touch Binding untuk Shield & Backup
 if (btnShield) {
-    btnShield.addEventListener('pointerdown', (e) => { 
-        e.preventDefault(); 
-        if (player) {
-            const now = performance.now();
-            if (now >= player.shieldCdUntil) player.activateShield();
-        } 
-    });
+    btnShield.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player) player.activateShield(); });
 }
 if (btnBackup) {
     btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); requestBackup(); });
@@ -1099,7 +1099,7 @@ if (canFullscreen && window.matchMedia('(pointer: coarse)').matches) {
     document.addEventListener('pointerup', goFullscreen, { once: true });
 }
 
-// Handler Khusus Start Mission & Restart
+// Handler Start Mission & Restart
 function handleStartMission(e) {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     if (gameStarted) return;
