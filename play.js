@@ -44,7 +44,7 @@ const ALLY_BOT_COLORS = {
 };
 
 const STATS = {
-    player: { turn: 0.38, main: 0.25, rev: 0.1, rcsUse: 0.4, mainUse: 0.5, mainRegen: 0.25, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
+    player: { turn: 0.38, main: 0.25, rev: 0.1, rcsUse: 0, mainUse: 0, mainRegen: 1, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
 };
 
 // ================= DOM HUD PLAYER =================
@@ -52,8 +52,6 @@ const $ = (id) => document.getElementById(id);
 const gameOverBox = $('game-over-box');
 const statusTitle = $('status-title');
 const hullBar = $('hull-bar'), hullText = $('hull-text');
-const mainFuelBar = $('main-fuel-bar'), mainFuelText = $('main-fuel-text');
-const rcsFuelBar = $('rcs-fuel-bar'), rcsFuelText = $('rcs-fuel-text');
 const ammoBar = $('ammo-bar'), ammoText = $('ammo-text');
 const enemyCount = $('enemy-count'), allyCount = $('ally-count');
 const waveCount = $('wave-count');
@@ -261,31 +259,27 @@ class Ship {
             keys.KeyR = false;
         }
 
-        // ================= LOGIKA JOYSTICK VIRTUAL (SHIP-RELATIVE) =================
+        // ================= LOGIKA JOYSTICK VIRTUAL =================
         const joyDist = Math.hypot(joy.dx, joy.dy);
         if (joy.active && joyDist > 0.25) {
-            // Sudut tarikan joystick di layar (0° = Atas, 90° = Kanan, 180°/-180° = Bawah, -90° = Kiri)
             let joyAngle = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI;
 
-            // Selisih sudut antara joystick dan MONCONG DEPAN pesawat
             let diffFwd = joyAngle - this.angle;
             while (diffFwd < -180) diffFwd += 360;
             while (diffFwd > 180) diffFwd -= 360;
 
             const absDiffFwd = Math.abs(diffFwd);
 
-            // 1. ZONA MUNDUR (REV): Ditarik berlawanan/ke area belakang pesawat (> 90° dari moncong)
+            // 1. ZONA MUNDUR (REV): Ditarik ke area belakang pesawat (> 90° dari moncong)
             if (absDiffFwd > 90) {
-                this.input.reverse = true; // Kunci pendorong REV
-                this.input.thrust = false;  // Matikan Main Engine total
+                this.input.reverse = true;
+                this.input.thrust = false;
                 this.joyHold = 0;
 
-                // Hitung selisih sudut terhadap BUNTUT pesawat (this.angle + 180)
                 let diffRear = joyAngle - (this.angle + 180);
                 while (diffRear < -180) diffRear += 360;
                 while (diffRear > 180) diffRear -= 360;
 
-                // Kemudikan buntut pesawat (RCS) menyelaraskan ke arah joystick saat mundur
                 if (diffRear < -8) this.input.left = true;
                 else if (diffRear > 8) this.input.right = true;
 
@@ -295,20 +289,15 @@ class Ship {
                 if (pd < -4) this.input.left = true;
                 else if (pd > 4) this.input.right = true;
 
-                // Deteksi kecepatan putaran joystick
                 let joyAngleDelta = joyAngle - (this.lastJoyAngle || joyAngle);
                 while (joyAngleDelta < -180) joyAngleDelta += 360;
                 while (joyAngleDelta > 180) joyAngleDelta -= 360;
 
-                const isRotatingFast = Math.abs(joyAngleDelta) > 3.0; // True jika joystick sedang diputar
+                const isRotatingFast = Math.abs(joyAngleDelta) > 3.0;
 
-                // MAIN ENGINE menyala HANYA jika:
-                // - Joystick didorong lebih dari 45% (joyDist > 0.45)
-                // - Putaran joystick sudah berhenti/stabil (!isRotatingFast)
-                // - Moncong pesawat sudah hampir lurus dengan arah joystick (< 30°)
                 if (joyDist > 0.45 && !isRotatingFast && absDiffFwd < 30) {
                     this.joyHold = (this.joyHold || 0) + 1;
-                    if (this.joyHold > 5) { // Hold beberapa frame baru Main Engine menyala
+                    if (this.joyHold > 5) {
                         this.input.thrust = true;
                     }
                 } else {
@@ -389,10 +378,17 @@ class Ship {
         const isBoosted = !!(this.boostUntil && performance.now() < this.boostUntil);
         const maxLimit = isBoosted ? BOOST_MAX_FUEL : MAX_FUEL;
 
-        if (this.rcs <= 0) this.rcsEmpty = true;
-        else if (this.rcsEmpty && this.rcs >= UNLOCK) this.rcsEmpty = false;
-        if (this.main <= 0) this.mainEmpty = true;
-        else if (this.mainEmpty && this.main >= UNLOCK) this.mainEmpty = false;
+        if (this.isPlayer) {
+            this.rcs = maxLimit;
+            this.main = maxLimit;
+            this.rcsEmpty = false;
+            this.mainEmpty = false;
+        } else {
+            if (this.rcs <= 0) this.rcsEmpty = true;
+            else if (this.rcsEmpty && this.rcs >= UNLOCK) this.rcsEmpty = false;
+            if (this.main <= 0) this.mainEmpty = true;
+            else if (this.mainEmpty && this.main >= UNLOCK) this.mainEmpty = false;
+        }
 
         const left = !this.rcsEmpty && !!i.left;
         const right = !this.rcsEmpty && !!i.right;
@@ -405,10 +401,12 @@ class Ship {
         if (rev) { this.vx -= p.rev * Math.sin(rad); this.vy -= p.rev * Math.cos(rad); }
         if (thrust) { this.vx += p.main * Math.sin(rad); this.vy += p.main * Math.cos(rad); }
 
-        const rcsUsed = left || right || rev;
-        this.rcs = rcsUsed ? Math.max(0, this.rcs - p.rcsUse) : Math.min(maxLimit, this.rcs + 0.3);
-        this.main = thrust ? Math.max(0, this.main - p.mainUse) : Math.min(maxLimit, this.main + p.mainRegen);
-        
+        if (!this.isPlayer) {
+            const rcsUsed = left || right || rev;
+            this.rcs = rcsUsed ? Math.max(0, this.rcs - p.rcsUse) : Math.min(maxLimit, this.rcs + 0.3);
+            this.main = thrust ? Math.max(0, this.main - p.mainUse) : Math.min(maxLimit, this.main + p.mainRegen);
+        }
+
         const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
         this.fx = { left, right, rev, thrust, 'shield-aura': isShieldActive };
 
@@ -499,8 +497,6 @@ class Ship {
         else if (type === 'mag') this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
         else if (type === 'boost') {
             this.boostUntil = performance.now() + BOOST_DURATION;
-            this.main = BOOST_MAX_FUEL;
-            this.rcs = BOOST_MAX_FUEL;
             createExplosion(this.x, this.y, 16);
         } else if (type === 'multi') {
             this.multishotUntil = performance.now() + MULTISHOT_DURATION;
@@ -532,23 +528,13 @@ class Ship {
         }
 
         if (this.isPlayer) {
-            const isBoosted = !!(this.boostUntil && performance.now() < this.boostUntil);
             const isMulti = !!(this.multishotUntil && performance.now() < this.multishotUntil);
-            const maxLimit = isBoosted ? BOOST_MAX_FUEL : MAX_FUEL;
 
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
             const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
 
             setW(hullBar, `${(this.hull / MAX_HULL) * 100}%`);
             setTxt(hullText, `${Math.round(this.hull)}%`);
-
-            setW(mainFuelBar, `${(this.main / maxLimit) * 100}%`);
-            setTxt(mainFuelText, `${Math.round(this.main)}%${isBoosted ? ' [BOOST]' : ''}`);
-            if (mainFuelBar) mainFuelBar.style.background = isBoosted ? '#a855f7' : '';
-
-            setW(rcsFuelBar, `${(this.rcs / maxLimit) * 100}%`);
-            setTxt(rcsFuelText, `${Math.round(this.rcs)}%${isBoosted ? ' [BOOST]' : ''}`);
-            if (rcsFuelBar) rcsFuelBar.style.background = isBoosted ? '#a855f7' : '';
 
             setW(ammoBar, `${(this.ammo / this.p.magSize) * 100}%`);
             if (ammoBar) {
@@ -644,13 +630,25 @@ function checkWaveProgress() {
 
 function spawnBot(team, botType = 'standard') {
     const isAlly = team === PLAYER_TEAM;
-    const rx = isAlly ? 0.3 + Math.random() * 0.4 : 0.05 + Math.random() * 0.9;
     const bot = new Ship(team, false, botType);
-    bot.reset(
-        cam.x + window.innerWidth * rx,
-        cam.y + window.innerHeight * (isAlly ? 0.3 : 0.8),
-        isAlly ? 0 : 90
-    );
+    
+    let spawnX, spawnY, spawnAngle;
+    if (isAlly) {
+        const rx = 0.3 + Math.random() * 0.4;
+        spawnX = cam.x + window.innerWidth * rx;
+        spawnY = cam.y + window.innerHeight * 0.3;
+        spawnAngle = 0;
+    } else {
+        // Musuh muncul di luar jangkauan layar (acak dari jarak 900px - 1400px)
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 900 + Math.random() * 500;
+        spawnX = player.x + Math.cos(angle) * dist;
+        spawnY = player.y + Math.sin(angle) * dist;
+        // Menghadap ke arah Player
+        spawnAngle = (Math.atan2(player.x - spawnX, player.y - spawnY) * 180) / Math.PI;
+    }
+
+    bot.reset(spawnX, spawnY, spawnAngle);
     ships.push(bot);
     if (!player.dead && gameOverBox) gameOverBox.classList.add('hidden');
 }
@@ -749,7 +747,6 @@ function updateBullets() {
         const sy = window.innerHeight - (b.y - cam.y);
         if (b.el) b.el.style.transform = `translate(${sx - 4}px, ${sy - 8}px) rotate(${b.angle}deg)`;
 
-        // Peluru hanya mengenai tim lawan
         const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 6);
         const out = --b.life <= 0;
 
@@ -822,7 +819,6 @@ function gameLoop(ts) {
         for (let i = 0; i < live.length; i++) {
             for (let j = i + 1; j < live.length; j++) {
                 const imp = resolveCollision(live[i], live[j], 0.8);
-                // Hanya berikan damage jika tabrakan BEDA TIM
                 if (imp > 0 && live[i].team !== live[j].team) {
                     live[i].takeDamage(Math.round(imp * 1.5));
                     live[j].takeDamage(Math.round(imp * 1.5));
@@ -908,7 +904,6 @@ function updateEffects() {
     drawShipIndicators();
 }
 
-// Panah Penunjuk Arah Musuh (Merah) & Ally (Biru) di Luar Layar
 function drawShipIndicators() {
     const w = fxCanvas.width, h = fxCanvas.height, cx = w / 2, cy = h / 2, pad = 28;
     fxCtx.font = 'bold 10px monospace';
@@ -983,7 +978,6 @@ document.querySelectorAll('[data-key]').forEach(btn => {
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
 });
 
-// Direct Touch Binding untuk Shield & Backup
 if (btnShield) {
     btnShield.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player) player.activateShield(); });
 }
@@ -991,7 +985,7 @@ if (btnBackup) {
     btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); requestBackup(); });
 }
 
-// ================= JOYSTICK VIRTUAL (MULTI-TOUCH) =================
+// ================= JOYSTICK VIRTUAL =================
 const joyBase = $('joy-base'), joyKnob = $('joy-knob');
 const JOY_MAX_R = 44;
 let joyTouchId = null;
