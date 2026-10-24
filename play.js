@@ -2,7 +2,6 @@
 const PLAYER_TEAM = 'blue';
 const INITIAL_LIVES = 3;
 const MAX_LIVES = 5;
-// Ukuran Kapal Diperkecil (W:22, H:28, Radius:9) agar arena terkesan jauh lebih luas
 const W = 22, H = 28, RADIUS = 9, MASS = 15;
 const MAX_FUEL = 100, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
@@ -230,7 +229,6 @@ class Ship {
         const el = document.createElement('div');
         el.className = 'fixed left-0 top-0 w-[22px] h-[28px] pointer-events-none z-10';
         el.style.willChange = 'transform';
-        // overflow-visible ditambahkan agar semburan api Thruster (Y=52) & RCS (X=-5/45) tidak terpotong oleh SVG
         el.innerHTML = `
         <div data-fx="shield-aura" class="absolute -inset-2 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_12px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
         <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full overflow-visible"
@@ -328,7 +326,6 @@ class Ship {
             keys.KeyF = false;
         }
 
-        // Virtual Joystick Logic
         const joyDist = Math.hypot(joy.dx, joy.dy);
         if (joy.active && joyDist > 0.25) {
             let joyAngle = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI;
@@ -486,7 +483,15 @@ class Ship {
         if (!this.reloadUntil && this.ammo < 1 && this.mags > 0) this.reloadUntil = ts + p.reload;
 
         if (i.shoot && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
-            this.shootStandard();
+            const now = performance.now();
+            // Jika bot/pemain memiliki efek laser atau homing aktif saat menembak
+            if (this.laserUntil && now < this.laserUntil) {
+                this.shootSpecial('laser');
+            } else if (this.homingUntil && now < this.homingUntil) {
+                this.shootSpecial('homing');
+            } else {
+                this.shootStandard();
+            }
             this.ammo -= 1;
             this.lastShot = ts;
         }
@@ -505,33 +510,35 @@ class Ship {
         document.body.appendChild(el);
         bullets.push({
             el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet,
-            x: spawnX, y: spawnY, vx, vy
+            x: spawnX, y: spawnY, vx, vy, width: 5, height: 10
         });
     }
 
     shootSpecial(type) {
         const now = performance.now();
-        if (now - lastSpecialShotTime < 180) return;
-        lastSpecialShotTime = now;
+        if (this.isPlayer && now - lastSpecialShotTime < 180) return;
+        if (this.isPlayer) lastSpecialShotTime = now;
 
         const rad = (this.angle * Math.PI) / 180;
         const spawnX = this.x + Math.sin(rad) * 12;
         const spawnY = this.y + Math.cos(rad) * 12;
 
-        if (type === 'laser' && this.laserUntil && now < this.laserUntil) {
-            const vx = this.vx + 22 * Math.sin(rad);
-            const vy = this.vy + 22 * Math.cos(rad);
+        if (type === 'laser') {
+            const vx = this.vx + 26 * Math.sin(rad);
+            const vy = this.vy + 26 * Math.cos(rad);
             const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
+            const laserColor = this.team === PLAYER_TEAM ? '#c084fc' : '#f87171';
 
+            // VISUAL LASER MEMANJANG (height: 110px dengan gradient beam putih berkilau)
             const el = document.createElement('div');
-            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:6px;height:22px;background:#c084fc;box-shadow:0 0 10px #c084fc`;
+            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:4px;height:110px;background:linear-gradient(to top, ${laserColor}, #ffffff, ${laserColor});box-shadow:0 0 12px ${laserColor}, 0 0 20px ${laserColor}`;
             document.body.appendChild(el);
             bullets.push({
-                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: '#c084fc',
-                x: spawnX, y: spawnY, vx, vy
+                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: laserColor, isLaser: true,
+                x: spawnX, y: spawnY, vx, vy, width: 4, height: 110
             });
 
-        } else if (type === 'homing' && this.homingUntil && now < this.homingUntil) {
+        } else if (type === 'homing') {
             [-6, 6].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const r = (ang * Math.PI) / 180;
@@ -542,11 +549,11 @@ class Ship {
                 const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
 
                 const el = document.createElement('div');
-                el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:5px;height:10px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
+                el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:5px;height:12px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
                 document.body.appendChild(el);
                 bullets.push({
                     el, owner: this, angle: bAngle, life: BULLET_LIFE * 1.3, damage: 22, homing: true, color: '#fb923c',
-                    x: sx, y: sy, vx, vy
+                    x: sx, y: sy, vx, vy, width: 5, height: 12
                 });
             });
         }
@@ -651,7 +658,6 @@ class Ship {
         if (this.isPlayer) {
             const now = performance.now();
 
-            // TOMBOL TERPISAH LASER & MISSILE: Tampil hanya jika aktif, expired langsung hilang
             if (this.laserUntil && now < this.laserUntil) {
                 if (btnLaser) btnLaser.classList.remove('hidden');
                 if (laserTimerText) laserTimerText.textContent = `${Math.ceil((this.laserUntil - now) / 1000)}s`;
@@ -778,6 +784,18 @@ function spawnBot(team, botType = 'standard') {
     }
 
     bot.reset(spawnX, spawnY, spawnAngle);
+
+    // Memberikan peluang bagi bot musuh untuk membawa senapan laser/rudal mulai wave 2
+    if (!isAlly && currentWave >= 2) {
+        const rand = Math.random();
+        const now = performance.now();
+        if (rand < 0.35) {
+            bot.laserUntil = now + WEAPON_DURATION * 1.5;
+        } else if (rand < 0.6) {
+            bot.homingUntil = now + WEAPON_DURATION * 1.5;
+        }
+    }
+
     ships.push(bot);
     if (!player.dead && gameOverBox) gameOverBox.classList.add('hidden');
 }
@@ -843,7 +861,20 @@ function updateMeteors() {
         let destroyed = false;
         for (let bi = bullets.length - 1; bi >= 0; bi--) {
             const b = bullets[bi];
-            if (Math.hypot(b.x - m.x, b.y - m.y) >= m.radius + 4) continue;
+
+            let isHit = false;
+            if (b.isLaser) {
+                for (let offset = -45; offset <= 45; offset += 15) {
+                    const rad = (b.angle * Math.PI) / 180;
+                    const px = b.x + Math.sin(rad) * offset;
+                    const py = b.y + Math.cos(rad) * offset;
+                    if (Math.hypot(px - m.x, py - m.y) < m.radius + 3) { isHit = true; break; }
+                }
+            } else {
+                isHit = Math.hypot(b.x - m.x, b.y - m.y) < m.radius + 4;
+            }
+
+            if (!isHit) continue;
 
             m.vx += (BULLET_MASS * (b.vx - m.vx)) / m.mass;
             m.vy += (BULLET_MASS * (b.vy - m.vy)) / m.mass;
@@ -870,7 +901,7 @@ function updateMeteors() {
     }
 }
 
-// ================= PELURU (TANPA BULLET TRAIL) =================
+// ================= PELURU (PROYEKTIL) =================
 function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
@@ -902,9 +933,23 @@ function updateBullets() {
 
         const sx = b.x - cam.x;
         const sy = window.innerHeight - (b.y - cam.y);
-        if (b.el) b.el.style.transform = `translate(${sx - 2.5}px, ${sy - 5}px) rotate(${b.angle}deg)`;
+        const bw = b.width || 5, bh = b.height || 10;
+        if (b.el) b.el.style.transform = `translate(${sx - bw / 2}px, ${sy - bh / 2}px) rotate(${b.angle}deg)`;
 
-        const target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 4);
+        let target = null;
+        if (b.isLaser) {
+            // Pengecekan benturan sepanjang balok laser
+            for (let offset = -45; offset <= 45; offset += 15) {
+                const rad = (b.angle * Math.PI) / 180;
+                const px = b.x + Math.sin(rad) * offset;
+                const py = b.y + Math.cos(rad) * offset;
+                target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(px - s.x, py - s.y) < s.radius + 3);
+                if (target) break;
+            }
+        } else {
+            target = ships.find(s => !s.dead && s !== b.owner && s.team !== b.owner.team && Math.hypot(b.x - s.x, b.y - s.y) < s.radius + 4);
+        }
+
         const out = --b.life <= 0;
 
         if (target || out) {
@@ -1052,7 +1097,6 @@ function updateEffects() {
     const h = fxCanvas.height;
     fxCtx.clearRect(0, 0, fxCanvas.width, h);
 
-    // Render Partikel Ledakan
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         if (!isPaused) {
@@ -1187,7 +1231,6 @@ if (speedSlider) {
     });
 }
 
-// Menutup popup slider jika menyentuh area luar
 window.addEventListener('pointerdown', (e) => {
     if (speedSliderBox && !speedSliderBox.contains(e.target) && e.target !== btnSpeed && !btnSpeed.contains(e.target)) {
         speedSliderBox.classList.add('hidden');
