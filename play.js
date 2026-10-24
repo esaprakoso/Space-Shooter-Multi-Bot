@@ -100,7 +100,6 @@ let currentWave = 1;
 let waveState = 'PLAYING';
 let backupCdUntil = 0;
 let playerSpeedFactor = 1.0;
-let lastSpecialShotTime = 0;
 
 // ================= UTIL =================
 function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; } }
@@ -219,6 +218,8 @@ class Ship {
         this.shieldCdUntil = 0;
         this.laserUntil = 0;
         this.homingUntil = 0;
+        this.lastLaserShot = 0;
+        this.lastHomingShot = 0;
 
         this.buildPlane();
         if (!isPlayer) this.buildHud();
@@ -277,6 +278,7 @@ class Ship {
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
             dead: false, invuln: false, lastShot: 0, joyHold: 0, lastJoyAngle: 0,
             shieldUntil: 0, shieldCdUntil: 0, laserUntil: 0, homingUntil: 0,
+            lastLaserShot: 0, lastHomingShot: 0,
             input: {}, fx: {},
         });
         if (this.el) {
@@ -304,6 +306,8 @@ class Ship {
             reverse: !!(k.ArrowDown || k.KeyS),
             thrust: !!(k.ArrowUp || k.KeyW),
             shoot: !!k.Space,
+            laserHold: !!k.KeyQ,
+            homingHold: !!k.KeyF,
         };
 
         if (k.KeyE) {
@@ -314,16 +318,6 @@ class Ship {
         if (k.KeyR) {
             requestBackup();
             keys.KeyR = false;
-        }
-
-        if (k.KeyQ && this.laserUntil && performance.now() < this.laserUntil) {
-            this.shootSpecial('laser');
-            keys.KeyQ = false;
-        }
-
-        if (k.KeyF && this.homingUntil && performance.now() < this.homingUntil) {
-            this.shootSpecial('homing');
-            keys.KeyF = false;
         }
 
         const joyDist = Math.hypot(joy.dx, joy.dy);
@@ -433,12 +427,17 @@ class Ship {
         if (pk) { if (Math.abs(diff) < 40) i.thrust = true; return; }
         if (dist > 400) i.thrust = true;
         else if (dist < 200) i.reverse = true;
-        if (Math.abs(diff) < 8 && dist < 500) i.shoot = true;
+        if (Math.abs(diff) < 8 && dist < 500) {
+            i.shoot = true;
+            i.laserHold = true;
+            i.homingHold = true;
+        }
     }
 
     step(ts) {
         const p = this.p, i = this.input;
         const speedFactor = this.isPlayer ? playerSpeedFactor : 1.0;
+        const now = performance.now();
 
         if (this.isPlayer) {
             this.rcs = MAX_FUEL;
@@ -469,7 +468,7 @@ class Ship {
             this.main = thrust ? Math.max(0, this.main - p.mainUse) : Math.min(MAX_FUEL, this.main + p.mainRegen);
         }
 
-        const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
+        const isShieldActive = !!(this.shieldUntil && now < this.shieldUntil);
         this.fx = { left, right, rev, thrust, 'shield-aura': isShieldActive };
 
         this.vAngle *= ANG_FRICTION;
@@ -482,9 +481,24 @@ class Ship {
         }
         if (!this.reloadUntil && this.ammo < 1 && this.mags > 0) this.reloadUntil = ts + p.reload;
 
+        // PENANGANAN HOLD UNTUK LASER (Semburan balok kontinyu)
+        if (i.laserHold && this.laserUntil && now < this.laserUntil) {
+            if (now - this.lastLaserShot > 75) { // Kecepatan semburan laser saat tombol ditahan
+                this.shootSpecial('laser');
+                this.lastLaserShot = now;
+            }
+        }
+
+        // PENANGANAN HOLD UNTUK MISSILE (Rentetan rudal pelacak)
+        if (i.homingHold && this.homingUntil && now < this.homingUntil) {
+            if (now - this.lastHomingShot > 220) {
+                this.shootSpecial('homing');
+                this.lastHomingShot = now;
+            }
+        }
+
+        // PENANGANAN TEMBAKAN PELURU STANDAR
         if (i.shoot && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
-            const now = performance.now();
-            // Jika bot/pemain memiliki efek laser atau homing aktif saat menembak
             if (this.laserUntil && now < this.laserUntil) {
                 this.shootSpecial('laser');
             } else if (this.homingUntil && now < this.homingUntil) {
@@ -515,27 +529,23 @@ class Ship {
     }
 
     shootSpecial(type) {
-        const now = performance.now();
-        if (this.isPlayer && now - lastSpecialShotTime < 180) return;
-        if (this.isPlayer) lastSpecialShotTime = now;
-
         const rad = (this.angle * Math.PI) / 180;
         const spawnX = this.x + Math.sin(rad) * 12;
         const spawnY = this.y + Math.cos(rad) * 12;
 
         if (type === 'laser') {
-            const vx = this.vx + 26 * Math.sin(rad);
-            const vy = this.vy + 26 * Math.cos(rad);
+            const vx = this.vx + 28 * Math.sin(rad);
+            const vy = this.vy + 28 * Math.cos(rad);
             const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
             const laserColor = this.team === PLAYER_TEAM ? '#c084fc' : '#f87171';
 
-            // VISUAL LASER MEMANJANG (height: 110px dengan gradient beam putih berkilau)
+            // BALOK LASER MEMANJANG BERKILAU (height: 120px)
             const el = document.createElement('div');
-            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:4px;height:110px;background:linear-gradient(to top, ${laserColor}, #ffffff, ${laserColor});box-shadow:0 0 12px ${laserColor}, 0 0 20px ${laserColor}`;
+            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:5px;height:120px;background:linear-gradient(to top, ${laserColor}, #ffffff, ${laserColor});box-shadow:0 0 14px ${laserColor}, 0 0 24px ${laserColor}`;
             document.body.appendChild(el);
             bullets.push({
                 el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: laserColor, isLaser: true,
-                x: spawnX, y: spawnY, vx, vy, width: 4, height: 110
+                x: spawnX, y: spawnY, vx, vy, width: 5, height: 120
             });
 
         } else if (type === 'homing') {
@@ -785,7 +795,6 @@ function spawnBot(team, botType = 'standard') {
 
     bot.reset(spawnX, spawnY, spawnAngle);
 
-    // Memberikan peluang bagi bot musuh untuk membawa senapan laser/rudal mulai wave 2
     if (!isAlly && currentWave >= 2) {
         const rand = Math.random();
         const now = performance.now();
@@ -864,7 +873,7 @@ function updateMeteors() {
 
             let isHit = false;
             if (b.isLaser) {
-                for (let offset = -45; offset <= 45; offset += 15) {
+                for (let offset = -50; offset <= 50; offset += 15) {
                     const rad = (b.angle * Math.PI) / 180;
                     const px = b.x + Math.sin(rad) * offset;
                     const py = b.y + Math.cos(rad) * offset;
@@ -938,8 +947,7 @@ function updateBullets() {
 
         let target = null;
         if (b.isLaser) {
-            // Pengecekan benturan sepanjang balok laser
-            for (let offset = -45; offset <= 45; offset += 15) {
+            for (let offset = -50; offset <= 50; offset += 15) {
                 const rad = (b.angle * Math.PI) / 180;
                 const px = b.x + Math.sin(rad) * offset;
                 const py = b.y + Math.cos(rad) * offset;
@@ -1161,7 +1169,7 @@ function updateCounts() {
     if (allyCount) allyCount.textContent = ally;
 }
 
-// ================= INPUT KEYBOARD =================
+// ================= INPUT KEYBOARD & TOUCH =================
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'KeyP' || e.code === 'Escape') {
@@ -1172,13 +1180,11 @@ window.addEventListener('keydown', (e) => {
     if (!isPaused) {
         if (e.code === 'KeyE' && player) player.activateShield();
         if (e.code === 'KeyR') requestBackup();
-        if (e.code === 'KeyQ' && player) player.shootSpecial('laser');
-        if (e.code === 'KeyF' && player) player.shootSpecial('homing');
     }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-// Kontrol Tombol On-Screen
+// KONTROL SENTUH SUPPORT HOLD (TERMASUK TOMBOL LASER & MISSILE)
 document.querySelectorAll('[data-key]').forEach(btn => {
     const code = btn.dataset.key;
     const set = (v) => (e) => { 
@@ -1199,18 +1205,6 @@ if (btnShield) {
 }
 if (btnBackup) {
     btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!isPaused) requestBackup(); });
-}
-if (btnLaser) {
-    btnLaser.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        if (player && !isPaused) player.shootSpecial('laser');
-    });
-}
-if (btnHoming) {
-    btnHoming.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        if (player && !isPaused) player.shootSpecial('homing');
-    });
 }
 
 // LOGIKA SLIDER KECEPATAN
