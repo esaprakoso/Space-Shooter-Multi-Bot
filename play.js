@@ -48,7 +48,7 @@ const STATS = {
     player: { turn: 0.38, main: 0.25, rev: 0.1, rcsUse: 0, mainUse: 0, mainRegen: 1, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
 };
 
-// ================= DOM HUD PLAYER =================
+// ================= DOM HUD PLAYER & PAUSE =================
 const $ = (id) => document.getElementById(id);
 const gameOverBox = $('game-over-box');
 const statusTitle = $('status-title');
@@ -67,6 +67,12 @@ const btnBackup = $('btn-backup');
 const startScreen = $('start-screen');
 const startBtn = $('start-btn');
 
+const pauseScreen = $('pause-screen');
+const pauseReason = $('pause-reason');
+const pauseBtn = $('pause-btn');
+const resumeBtn = $('resume-btn');
+const pauseRestartBtn = $('pause-restart-btn');
+
 // ================= STATE =================
 const keys = {};
 const joy = { active: false, dx: 0, dy: 0 };
@@ -80,6 +86,7 @@ const PARTICLE_COLORS = ['#f97316', '#ef4444', '#eab308', '#38bdf8', '#a855f7', 
 const cam = { x: 0, y: 0 };
 
 let gameStarted = false;
+let isPaused = false;
 let currentWave = 1;
 let waveState = 'PLAYING';
 let backupCdUntil = 0;
@@ -126,7 +133,6 @@ function createExplosion(cx, cy, count = 24) {
     }
 }
 
-// PARTIKEL JEJAK MESIN (THRUSTER TRAIL)
 function createThrusterParticle(px, py, angleRad, isRev = false) {
     if (particles.length >= MAX_PARTICLES) return;
     const offsetSpeed = isRev ? 2 : -4;
@@ -141,6 +147,40 @@ function createThrusterParticle(px, py, angleRad, isRev = false) {
         color: isRev ? '#38bdf8' : (Math.random() > 0.4 ? '#f97316' : '#eab308'),
     });
 }
+
+// ================= SISTEM PAUSE =================
+function pauseGame(reasonText = "Permainan dihentikan sementara") {
+    if (!gameStarted || isPaused) return;
+    isPaused = true;
+    if (pauseReason) pauseReason.textContent = reasonText;
+    if (pauseScreen) pauseScreen.classList.remove('hidden');
+}
+
+function resumeGame() {
+    if (!isPaused) return;
+    isPaused = false;
+    if (pauseScreen) pauseScreen.classList.add('hidden');
+}
+
+function togglePause() {
+    if (isPaused) resumeGame(); else pauseGame();
+}
+
+// Handler Auto-Pause saat berpindah tab atau memutar ke portrait
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pauseGame("Berpindah aplikasi / tab");
+});
+
+window.addEventListener('blur', () => {
+    pauseGame("Layar kehilangan fokus");
+});
+
+function checkOrientationPause() {
+    if (window.innerHeight > window.innerWidth) {
+        pauseGame("Mode Layar Tegak (Portrait)");
+    }
+}
+window.addEventListener('resize', checkOrientationPause);
 
 // ================= KOMPONEN: SHIP =================
 class Ship {
@@ -416,7 +456,7 @@ class Ship {
         if (rev) { this.vx -= p.rev * Math.sin(rad); this.vy -= p.rev * Math.cos(rad); }
         if (thrust) { this.vx += p.main * Math.sin(rad); this.vy += p.main * Math.cos(rad); }
 
-        // JEJAK MESIN (THRUSTER TRAIL PARTICLES)
+        // JEJAK MESIN
         if (thrust) {
             const px = this.x - Math.sin(rad) * 20;
             const py = this.y - Math.cos(rad) * 20;
@@ -461,7 +501,6 @@ class Ship {
         const isMulti = !!(this.multishotUntil && now < this.multishotUntil);
 
         if (isLaser) {
-            // MODE LASER: Tembakan lurus berkecepatan tinggi & besar
             const rad = (this.angle * Math.PI) / 180;
             const spawnX = this.x + Math.sin(rad) * 20;
             const spawnY = this.y + Math.cos(rad) * 20;
@@ -475,7 +514,6 @@ class Ship {
             });
 
         } else if (isHoming) {
-            // MODE HOMING: 2 Rudal Pelacak
             [-10, 10].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const rad = (ang * Math.PI) / 180;
@@ -492,7 +530,6 @@ class Ship {
             });
 
         } else if (isMulti) {
-            // MODE MULTI: 3 Tembakan Samping
             [this.angle - 12, this.angle, this.angle + 12].forEach(ang => {
                 const rad = (ang * Math.PI) / 180;
                 const spawnX = this.x + Math.sin(rad) * 16;
@@ -508,7 +545,6 @@ class Ship {
             });
 
         } else {
-            // STANDAR
             const rad = (this.angle * Math.PI) / 180;
             const spawnX = this.x + Math.sin(rad) * 16;
             const spawnY = this.y + Math.cos(rad) * 16;
@@ -691,7 +727,7 @@ function showStatus(text, colorClass) {
 }
 
 function requestBackup() {
-    if (!gameStarted || player.dead) return;
+    if (!gameStarted || player.dead || isPaused) return;
     const now = performance.now();
     if (now < backupCdUntil) return;
 
@@ -757,6 +793,7 @@ function spawnBot(team, botType = 'standard') {
 }
 
 function resetGame() {
+    resumeGame();
     [...ships].forEach(s => { if (!s.isPlayer) s.remove(); });
     player.lives = INITIAL_LIVES;
     player.reset(0, 0, 0); updateCamera();
@@ -846,7 +883,6 @@ function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
 
-        // LOGIKA RUDAL HOMING (Membelok Otomatis Mengejar Musuh)
         if (b.homing) {
             let target = null, minDist = 600;
             for (const s of ships) {
@@ -937,7 +973,7 @@ function updatePickups() {
 
 // ================= GAME LOOP =================
 function gameLoop(ts) {
-    if (gameStarted) {
+    if (gameStarted && !isPaused) {
         if (Math.random() < 0.03) spawnMeteor();
 
         for (const s of [...ships]) {
@@ -1025,7 +1061,9 @@ function updateEffects() {
     fxCtx.clearRect(0, 0, fxCanvas.width, h);
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        p.x += p.vx; p.y += p.vy; p.op -= 0.035;
+        if (!isPaused) {
+            p.x += p.vx; p.y += p.vy; p.op -= 0.035;
+        }
         if (p.op <= 0) { particles[i] = particles[particles.length - 1]; particles.pop(); continue; }
         fxCtx.globalAlpha = p.op;
         fxCtx.fillStyle = p.color;
@@ -1087,19 +1125,25 @@ function updateCounts() {
 // ================= INPUT KEYBOARD =================
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') e.preventDefault();
+    if (e.code === 'KeyP' || e.code === 'Escape') {
+        togglePause();
+        return;
+    }
     keys[e.code] = true;
-    if (e.code === 'KeyE' && player) player.activateShield();
-    if (e.code === 'KeyR') requestBackup();
+    if (!isPaused) {
+        if (e.code === 'KeyE' && player) player.activateShield();
+        if (e.code === 'KeyR') requestBackup();
+    }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-// Kontrol Tombol On-Screen (THRUST, SHIELD, BACKUP & FIRE)
+// Kontrol Tombol On-Screen
 document.querySelectorAll('[data-key]').forEach(btn => {
     const code = btn.dataset.key;
     const set = (v) => (e) => { 
         e.preventDefault(); 
         keys[code] = v; 
-        if (v) {
+        if (v && !isPaused) {
             if (code === 'KeyE' && player) player.activateShield();
             if (code === 'KeyR') requestBackup();
         }
@@ -1110,10 +1154,20 @@ document.querySelectorAll('[data-key]').forEach(btn => {
 });
 
 if (btnShield) {
-    btnShield.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player) player.activateShield(); });
+    btnShield.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player && !isPaused) player.activateShield(); });
 }
 if (btnBackup) {
-    btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); requestBackup(); });
+    btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!isPaused) requestBackup(); });
+}
+
+if (pauseBtn) {
+    pauseBtn.addEventListener('click', (e) => { e.preventDefault(); togglePause(); });
+}
+if (resumeBtn) {
+    resumeBtn.addEventListener('click', (e) => { e.preventDefault(); resumeGame(); });
+}
+if (pauseRestartBtn) {
+    pauseRestartBtn.addEventListener('click', (e) => { e.preventDefault(); resetGame(); });
 }
 
 // ================= JOYSTICK VIRTUAL =================
@@ -1152,7 +1206,7 @@ function resetJoy() {
 if (joyBase) {
     joyBase.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        if (joyTouchId !== null) return;
+        if (joyTouchId !== null || isPaused) return;
         const touch = e.changedTouches[0];
         joyTouchId = touch.identifier;
         joy.active = true;
@@ -1160,7 +1214,7 @@ if (joyBase) {
     }, { passive: false });
 
     window.addEventListener('touchmove', (e) => {
-        if (joyTouchId === null) return;
+        if (joyTouchId === null || isPaused) return;
         for (let i = 0; i < e.changedTouches.length; i++) {
             if (e.changedTouches[i].identifier === joyTouchId) {
                 updateJoyPos(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
@@ -1183,7 +1237,7 @@ if (joyBase) {
     window.addEventListener('touchcancel', endTouchHandler);
 
     joyBase.addEventListener('mousedown', (e) => {
-        if (joy.active) return;
+        if (joy.active || isPaused) return;
         joy.active = true;
         updateJoyPos(e.clientX, e.clientY);
 

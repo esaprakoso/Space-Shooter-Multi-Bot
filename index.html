@@ -55,10 +55,29 @@
                 <p>• <span class="text-teal-400 font-bold">Item MULTI</span>: Tembakan 3 Arah</p>
                 <p>• <span class="text-cyan-400 font-bold">Tombol SHIELD (E)</span>: Kebal Serangan 5s</p>
                 <p>• <span class="text-blue-400 font-bold">Tombol BACKUP (R)</span>: Panggil Bantuan</p>
+                <p>• <span class="text-yellow-400 font-bold">PAUSE (P/Esc)</span>: Jeda Permainan</p>
             </div>
             <button id="start-btn" class="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm rounded-lg transition-all shadow-lg shadow-cyan-600/40 cursor-pointer uppercase tracking-wider touch-none select-none active:scale-95">
                 START MISSION
             </button>
+        </div>
+    </div>
+
+    <!-- PAUSE SCREEN OVERLAY -->
+    <div id="pause-screen" class="hidden fixed inset-0 z-50 bg-gray-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-gray-900 border border-yellow-500/50 p-6 rounded-xl max-w-xs w-full text-center space-y-4 shadow-2xl shadow-yellow-900/20">
+            <h2 class="text-xl font-black text-yellow-400 tracking-wider uppercase flex items-center justify-center gap-2">
+                <span>⏸️</span> GAME PAUSED
+            </h2>
+            <p id="pause-reason" class="text-xs text-gray-400">Permainan dihentikan sementara</p>
+            <div class="space-y-2 pt-2">
+                <button id="resume-btn" class="w-full py-2.5 bg-yellow-600 hover:bg-yellow-500 text-white font-bold text-xs rounded-lg transition-all cursor-pointer uppercase tracking-wider active:scale-95">
+                    ▶️ RESUME MISSION
+                </button>
+                <button id="pause-restart-btn" class="w-full py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold text-xs rounded-lg border border-gray-700 transition-all cursor-pointer uppercase tracking-wider active:scale-95">
+                    🔄 RESTART MISSION
+                </button>
+            </div>
         </div>
     </div>
 
@@ -118,8 +137,11 @@
         </div>
     </div>
 
-    <!-- INDIKATOR WAVE & MUSUH -->
-    <div class="fixed top-3 left-1/2 -translate-x-1/2 z-20 flex gap-2 text-[11px] font-bold">
+    <!-- INDIKATOR WAVE, MUSUH & TOMBOL PAUSE -->
+    <div class="fixed top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 text-[11px] font-bold">
+        <button id="pause-btn" class="bg-gray-900/90 hover:bg-gray-800 px-2.5 py-1 rounded-lg border border-yellow-500/40 text-yellow-400 active:scale-95 transition-all cursor-pointer">
+            ⏸️
+        </button>
         <div class="bg-gray-900/90 px-3 py-1 rounded-lg border border-purple-500/40 backdrop-blur text-purple-300">
             WAVE <span id="wave-count" class="text-white">1</span></div>
         <div class="bg-gray-900/80 px-2.5 py-1 rounded-lg border border-red-500/30 backdrop-blur text-red-400">
