@@ -561,11 +561,9 @@ function requestBackup() {
     const now = performance.now();
     if (now < backupCdUntil) return;
 
-    // Cooldown memanjang seiring peningkatan level/wave musuh (15s base + 5s per level tambahan)
     const cdDuration = 15000 + (currentWave - 1) * 5000;
     backupCdUntil = now + cdDuration;
 
-    // Tipe kawan bantuan disesuaikan dengan tingkat kesulitan Wave
     const allyType = currentWave >= 5 ? 'heavy' : currentWave >= 3 ? 'standard' : 'scout';
     spawnBot('blue', allyType);
     createExplosion(player.x, player.y, 10);
@@ -937,8 +935,12 @@ document.querySelectorAll('[data-key]').forEach(btn => {
 });
 
 // Direct Touch Binding untuk Shield & Backup
-if (btnShield) btnShield.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player) player.activateShield(); });
-if (btnBackup) btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); requestBackup(); });
+if (btnShield) {
+    btnShield.addEventListener('pointerdown', (e) => { e.preventDefault(); if (player) player.activateShield(); });
+}
+if (btnBackup) {
+    btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); requestBackup(); });
+}
 
 // ================= JOYSTICK VIRTUAL (MULTI-TOUCH) =================
 const joyBase = $('joy-base'), joyKnob = $('joy-knob');
@@ -1058,17 +1060,31 @@ if (canFullscreen && window.matchMedia('(pointer: coarse)').matches) {
     document.addEventListener('pointerup', goFullscreen, { once: true });
 }
 
-// Tombol START & RESTART
-if (startBtn && startScreen) {
-    startBtn.addEventListener('click', () => {
-        startScreen.classList.add('hidden');
-        gameStarted = true;
-        startWave(1);
-    });
+// Handler Khusus Start Mission & Restart (Gunakan Pointerdown & Click)
+function handleStartMission(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    if (gameStarted) return;
+    if (startScreen) startScreen.classList.add('hidden');
+    gameStarted = true;
+    startWave(1);
+}
+
+if (startBtn) {
+    startBtn.addEventListener('pointerdown', handleStartMission);
+    startBtn.addEventListener('click', handleStartMission);
+}
+
+function handleResetGame(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    resetGame();
+    if (e && e.currentTarget) e.currentTarget.blur();
 }
 
 const resetBtn = $('reset-btn');
-if (resetBtn) resetBtn.addEventListener('click', (e) => { resetGame(); e.currentTarget.blur(); });
+if (resetBtn) {
+    resetBtn.addEventListener('pointerdown', handleResetGame);
+    resetBtn.addEventListener('click', handleResetGame);
+}
 
 player.reset(0, 0, 0); updateCamera();
 requestAnimationFrame(gameLoop);
