@@ -224,8 +224,6 @@ class Ship {
         const el = document.createElement('div');
         el.className = 'fixed left-0 top-0 w-10 h-12 pointer-events-none z-10';
         el.style.willChange = 'transform';
-        // Gambar kapal bersih tanpa visual RCS/Thruster.
-        // Skala SVG 1:1 (40x48), Titik Pusat di (20,24), Moncong di (20,6) -> Jarak 18px
         el.innerHTML = `
         <div data-fx="shield-aura" class="absolute -inset-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
         <svg viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
@@ -473,7 +471,6 @@ class Ship {
         const isHoming = !!(this.homingUntil && now < this.homingUntil);
         const isMulti = !!(this.multishotUntil && now < this.multishotUntil);
 
-        // Moncong kapal tepat berada di jarak 18px dari pusat rotasi kapal
         const rad = (this.angle * Math.PI) / 180;
         const spawnX = this.x + Math.sin(rad) * 18;
         const spawnY = this.y + Math.cos(rad) * 18;
