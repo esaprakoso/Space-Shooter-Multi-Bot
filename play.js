@@ -108,6 +108,7 @@ class Ship {
         this.p = isPlayer ? STATS.player : STATS.bot;
         this.radius = RADIUS;
         this.mass = MASS;
+        this.joyHold = 0;
         this.buildPlane();
         if (!isPlayer) this.buildHud();
     }
@@ -159,7 +160,7 @@ class Ship {
             hull: MAX_HULL, main: MAX_FUEL, rcs: MAX_FUEL,
             mainEmpty: false, rcsEmpty: false,
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
-            dead: false, invuln: false, lastShot: 0, boostUntil: 0,
+            dead: false, invuln: false, lastShot: 0, boostUntil: 0, joyHold: 0,
             input: {}, fx: {},
         });
         if (this.el) {
@@ -182,10 +183,29 @@ class Ship {
             let diff = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI - this.angle;
             while (diff < -180) diff += 360;
             while (diff > 180) diff -= 360;
+
             const pd = diff - this.vAngle * 10;
             if (pd < -4) this.input.left = true;
             else if (pd > 4) this.input.right = true;
-            if (Math.abs(diff) < 50) this.input.thrust = true;
+
+            const absDiff = Math.abs(diff);
+
+            // Jika joystick ditarik ke belakang (sudut > 130 deg) -> Nyalakan REV
+            if (absDiff > 130) {
+                this.input.reverse = true;
+                this.joyHold = 0;
+            } 
+            // Jika joystick diarahkan ke depan (< 50 deg) -> Butuh di-hold beberapa saat sebelum THRUST menyala
+            else if (absDiff < 50) {
+                this.joyHold = (this.joyHold || 0) + 1;
+                if (this.joyHold > 12) { // Delay hold (~200ms)
+                    this.input.thrust = true;
+                }
+            } else {
+                this.joyHold = 0;
+            }
+        } else {
+            this.joyHold = 0;
         }
     }
 
@@ -732,7 +752,7 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-// Kontrol Tombol On-Screen (REV & FIRE)
+// Kontrol Tombol On-Screen (THRUST & FIRE)
 document.querySelectorAll('[data-key]').forEach(btn => {
     const code = btn.dataset.key;
     const set = (v) => (e) => { e.preventDefault(); keys[code] = v; btn.style.opacity = v ? '1' : '0.7'; };
