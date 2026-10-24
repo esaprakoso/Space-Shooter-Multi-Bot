@@ -1,8 +1,9 @@
 // ================= KONSTANTA =================
 const PLAYER_TEAM = 'blue';
 const INITIAL_LIVES = 3;
+const MAX_LIVES = 5;
 const W = 40, H = 48, RADIUS = 18, MASS = 25;
-const MAX_FUEL = 100, BOOST_MAX_FUEL = 160, UNLOCK = 30, MAX_HULL = 100;
+const MAX_FUEL = 100, UNLOCK = 30, MAX_HULL = 100;
 const FRICTION = 0.985, ANG_FRICTION = 0.93;
 const MAX_METEORS = 10;
 const BULLET_DAMAGE = 15;
@@ -20,7 +21,6 @@ const PICKUP_RADIUS = 14;
 const PICKUP_SEEK = 700;
 const HEAL_AMOUNT = 30;
 const MAG_AMOUNT = 1;
-const BOOST_DURATION = 10000;
 const MULTISHOT_DURATION = 8000;
 const SHIELD_DURATION = 5000;
 const SHIELD_COOLDOWN = 15000;
@@ -221,7 +221,7 @@ class Ship {
             hull: this.maxHp, main: MAX_FUEL, rcs: MAX_FUEL,
             mainEmpty: false, rcsEmpty: false,
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
-            dead: false, invuln: false, lastShot: 0, boostUntil: 0, joyHold: 0, lastJoyAngle: 0,
+            dead: false, invuln: false, lastShot: 0, joyHold: 0, lastJoyAngle: 0,
             shieldUntil: 0, shieldCdUntil: 0, multishotUntil: 0,
             input: {}, fx: {},
         });
@@ -378,12 +378,9 @@ class Ship {
     step(ts) {
         const p = this.p, i = this.input;
 
-        const isBoosted = !!(this.boostUntil && performance.now() < this.boostUntil);
-        const maxLimit = isBoosted ? BOOST_MAX_FUEL : MAX_FUEL;
-
         if (this.isPlayer) {
-            this.rcs = maxLimit;
-            this.main = maxLimit;
+            this.rcs = MAX_FUEL;
+            this.main = MAX_FUEL;
             this.rcsEmpty = false;
             this.mainEmpty = false;
         } else {
@@ -406,8 +403,8 @@ class Ship {
 
         if (!this.isPlayer) {
             const rcsUsed = left || right || rev;
-            this.rcs = rcsUsed ? Math.max(0, this.rcs - p.rcsUse) : Math.min(maxLimit, this.rcs + 0.3);
-            this.main = thrust ? Math.max(0, this.main - p.mainUse) : Math.min(maxLimit, this.main + p.mainRegen);
+            this.rcs = rcsUsed ? Math.max(0, this.rcs - p.rcsUse) : Math.min(MAX_FUEL, this.rcs + 0.3);
+            this.main = thrust ? Math.max(0, this.main - p.mainUse) : Math.min(MAX_FUEL, this.main + p.mainRegen);
         }
 
         const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
@@ -476,15 +473,13 @@ class Ship {
             if (this.el) this.el.classList.add('hidden');
 
             if (this.lives > 0) {
-                // Respawn Player jika nyawa masih tersisa
                 setTimeout(() => {
                     if (!gameStarted) return;
                     this.reset(this.x, this.y, 0);
                     this.shieldCdUntil = 0;
-                    this.activateShield(); // Beri shield kebal gratis saat respawn
+                    this.activateShield();
                 }, 1200);
             } else {
-                // Nyawa habis total -> Game Over
                 showStatus('GAME OVER! NYAWA HABIS', 'text-red-500');
             }
         } else {
@@ -503,7 +498,7 @@ class Ship {
     canUse(type) {
         if (type === 'health') return this.hull < this.maxHp;
         if (type === 'mag') return this.mags < this.p.maxMags;
-        if (type === 'boost') return !this.boostUntil || performance.now() > this.boostUntil;
+        if (type === 'life') return this.isPlayer && this.lives < MAX_LIVES;
         if (type === 'multi') return !this.multishotUntil || performance.now() > this.multishotUntil;
         return true;
     }
@@ -511,9 +506,9 @@ class Ship {
     apply(type) {
         if (type === 'health') this.hull = Math.min(this.maxHp, this.hull + HEAL_AMOUNT);
         else if (type === 'mag') this.mags = Math.min(this.p.maxMags, this.mags + MAG_AMOUNT);
-        else if (type === 'boost') {
-            this.boostUntil = performance.now() + BOOST_DURATION;
-            createExplosion(this.x, this.y, 16);
+        else if (type === 'life') {
+            if (this.isPlayer) this.lives = Math.min(MAX_LIVES, this.lives + 1);
+            createExplosion(this.x, this.y, 18);
         } else if (type === 'multi') {
             this.multishotUntil = performance.now() + MULTISHOT_DURATION;
             createExplosion(this.x, this.y, 16);
@@ -523,9 +518,8 @@ class Ship {
     seekPickup() {
         let best = null, bestD = PICKUP_SEEK;
         for (const k of pickups) {
-            const isBoosted = !!(this.boostUntil && performance.now() < this.boostUntil);
             const isMulti = !!(this.multishotUntil && performance.now() < this.multishotUntil);
-            const need = k.type === 'health' ? this.hull < (this.maxHp * 0.6) : k.type === 'mag' ? this.mags < 1 : k.type === 'boost' ? !isBoosted : !isMulti;
+            const need = k.type === 'health' ? this.hull < (this.maxHp * 0.6) : k.type === 'mag' ? this.mags < 1 : k.type === 'life' ? (this.isPlayer && this.lives < 3) : !isMulti;
             if (!need) continue;
             const d = Math.hypot(k.x - this.x, k.y - this.y);
             if (d < bestD) { bestD = d; best = k; }
@@ -778,13 +772,13 @@ function updateBullets() {
 const PICKUP_TYPES = {
     health: { color: '#22c55e', icon: '<path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z" fill="#fff"/>' },
     mag: { color: '#eab308', icon: '<rect x="8" y="3" width="8" height="18" rx="1.5" fill="#fff"/><path d="M8 8h8M8 12h8M8 16h8" stroke="#a16207" stroke-width="1.5"/>' },
-    boost: { color: '#a855f7', icon: '<path d="M13 2L3 14h7v8l10-12h-7z" fill="#fff"/>' },
+    life: { color: '#ef4444', icon: '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#fff"/>' },
     multi: { color: '#14b8a6', icon: '<path d="M12 2l4 8h-3v12h-2V10H8l4-8zM4 6l3 6H5v10H3V12H1l3-6zm16 0l3 6h-2v10h-2V12h-2l3-6z" fill="#fff"/>' },
 };
 
 function spawnPickup() {
     if (pickups.length >= PICKUP_MAX) return;
-    const types = ['health', 'mag', 'boost', 'multi'];
+    const types = ['health', 'mag', 'life', 'multi'];
     const type = types[Math.floor(Math.random() * types.length)];
     const c = PICKUP_TYPES[type];
     const el = document.createElement('div');
