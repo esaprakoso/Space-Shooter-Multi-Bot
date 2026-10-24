@@ -27,6 +27,10 @@ const SHIELD_COOLDOWN = 15000;
 const AVOID_METEOR = 90;
 const AVOID_SHIP = 70;
 
+const LASER_RANGE = 650;       // jarak maks beam (px)
+const LASER_TICK = 100;        // interval damage (ms)
+const LASER_TICK_DAMAGE = 4;   // ~40 dps
+
 const TEAMS = {
     blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
     red: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171' },
@@ -278,7 +282,7 @@ class Ship {
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
             dead: false, invuln: false, lastShot: 0, joyHold: 0, lastJoyAngle: 0,
             shieldUntil: 0, shieldCdUntil: 0, laserUntil: 0, homingUntil: 0,
-            lastLaserShot: 0, lastHomingShot: 0,
+            lastLaserShot: 0, lastHomingShot: 0, laserOn: false,
             input: {}, fx: {},
         });
         if (this.el) {
@@ -481,13 +485,8 @@ class Ship {
         }
         if (!this.reloadUntil && this.ammo < 1 && this.mags > 0) this.reloadUntil = ts + p.reload;
 
-        // PENANGANAN HOLD UNTUK LASER (Semburan balok kontinyu)
-        if (i.laserHold && this.laserUntil && now < this.laserUntil) {
-            if (now - this.lastLaserShot > 75) { // Kecepatan semburan laser saat tombol ditahan
-                this.shootSpecial('laser');
-                this.lastLaserShot = now;
-            }
-        }
+        // LASER: beam aktif selama Q atau FIRE ditahan
+        this.laserOn = !!(this.laserUntil && now < this.laserUntil && (i.laserHold || i.shoot));
 
         // PENANGANAN HOLD UNTUK MISSILE (Rentetan rudal pelacak)
         if (i.homingHold && this.homingUntil && now < this.homingUntil) {
@@ -498,10 +497,8 @@ class Ship {
         }
 
         // PENANGANAN TEMBAKAN PELURU STANDAR
-        if (i.shoot && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
-            if (this.laserUntil && now < this.laserUntil) {
-                this.shootSpecial('laser');
-            } else if (this.homingUntil && now < this.homingUntil) {
+        if (i.shoot && !this.laserOn && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
+            if (this.homingUntil && now < this.homingUntil) {
                 this.shootSpecial('homing');
             } else {
                 this.shootStandard();
@@ -533,22 +530,7 @@ class Ship {
         const spawnX = this.x + Math.sin(rad) * 12;
         const spawnY = this.y + Math.cos(rad) * 12;
 
-        if (type === 'laser') {
-            const vx = this.vx + 28 * Math.sin(rad);
-            const vy = this.vy + 28 * Math.cos(rad);
-            const bAngle = (Math.atan2(vx, vy) * 180) / Math.PI;
-            const laserColor = this.team === PLAYER_TEAM ? '#c084fc' : '#f87171';
-
-            // BALOK LASER MEMANJANG BERKILAU (height: 120px)
-            const el = document.createElement('div');
-            el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:5px;height:120px;background:linear-gradient(to top, ${laserColor}, #ffffff, ${laserColor});box-shadow:0 0 14px ${laserColor}, 0 0 24px ${laserColor}`;
-            document.body.appendChild(el);
-            bullets.push({
-                el, owner: this, angle: bAngle, life: BULLET_LIFE, damage: 35, color: laserColor, isLaser: true,
-                x: spawnX, y: spawnY, vx, vy, width: 5, height: 120
-            });
-
-        } else if (type === 'homing') {
+        if (type === 'homing') {
             [-6, 6].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const r = (ang * Math.PI) / 180;
@@ -569,17 +551,18 @@ class Ship {
         }
     }
 
-    takeDamage(amount) {
+    takeDamage(amount, beam = false) {
         const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
         if (isShieldActive) {
             createExplosion(this.x, this.y, 2);
             return;
         }
+        if ((this.invuln && !beam) || this.dead || amount <= 0) return;
 
-        if (this.invuln || this.dead || amount <= 0) return;
         this.hull = Math.max(0, this.hull - amount);
-        createExplosion(this.x, this.y, 10);
+        createExplosion(this.x, this.y, beam ? 2 : 10);
         if (this.hull <= 0) return this.destroy();
+        if (beam) return;
 
         this.invuln = true;
         if (this.el) this.el.style.opacity = '0.4';
@@ -610,6 +593,7 @@ class Ship {
     }
 
     remove() {
+        if (this.beam) { this.beam.root.remove(); this.beam.muzzle.remove(); this.beam.hit.remove(); }
         if (this.el) this.el.remove();
         if (this.hud) this.hud.remove();
         const idx = ships.indexOf(this);
@@ -911,7 +895,94 @@ function updateMeteors() {
 }
 
 // ================= PELURU (PROYEKTIL) =================
+// ================= LASER BEAM =================
+function ensureBeam(s) {
+    if (s.beam) return s.beam;
+    const c = s.team === PLAYER_TEAM ? '#c084fc' : '#f87171';
+    const root = document.createElement('div');
+    root.style.cssText = 'position:fixed;left:0;top:0;width:22px;pointer-events:none;z-index:9;will-change:transform;transform-origin:50% 100%;display:none';
+    root.innerHTML = `
+        <div style="position:absolute;inset:0;background:linear-gradient(90deg,${c}00,${c}aa 35%,${c}aa 65%,${c}00);filter:blur(3px)"></div>
+        <div style="position:absolute;top:0;bottom:0;left:50%;width:4px;margin-left:-2px;border-radius:2px;background:#fff;box-shadow:0 0 6px #fff,0 0 14px ${c},0 0 28px ${c}"></div>`;
+    const flash = () => {
+        const d = document.createElement('div');
+        d.style.cssText = `position:fixed;left:0;top:0;width:26px;height:26px;pointer-events:none;z-index:9;border-radius:9999px;will-change:transform;display:none;background:radial-gradient(circle,#fff 0%,${c} 40%,${c}00 70%)`;
+        document.body.appendChild(d);
+        return d;
+    };
+    document.body.appendChild(root);
+    s.beam = { root, muzzle: flash(), hit: flash(), lastTick: 0 };
+    return s.beam;
+}
+
+function hideBeam(b) {
+    b.root.style.display = b.muzzle.style.display = b.hit.style.display = 'none';
+}
+
+function updateBeams() {
+    const now = performance.now();
+    for (const s of [...ships]) {
+        if (!s.laserOn || s.dead) { if (s.beam) hideBeam(s.beam); continue; }
+        const b = ensureBeam(s);
+        const rad = (s.angle * Math.PI) / 180;
+        const dx = Math.sin(rad), dy = Math.cos(rad);
+        const ox = s.x + dx * 12, oy = s.y + dy * 12;
+
+        // raycast: berhenti di target pertama yang kena
+        let len = LASER_RANGE, hitObj = null, hitType = '';
+        const test = (o, r, type) => {
+            const px = o.x - ox, py = o.y - oy;
+            const t = px * dx + py * dy;
+            if (t < 0 || t > len + r) return;
+            const perp = Math.abs(px * dy - py * dx);
+            if (perp > r + 3) return;
+            const tt = Math.max(0, t - Math.sqrt(Math.max(0, r * r - perp * perp)));
+            if (tt < len) { len = tt; hitObj = o; hitType = type; }
+        };
+        for (const t of ships) if (!t.dead && t !== s && t.team !== s.team) test(t, t.radius, 'ship');
+        for (const m of meteors) test(m, m.radius, 'meteor');
+
+        if (hitObj) {
+            if (now - b.lastTick >= LASER_TICK) {
+                b.lastTick = now;
+                if (hitType === 'ship') {
+                    hitObj.takeDamage(LASER_TICK_DAMAGE, true);
+                } else {
+                    hitObj.hp -= LASER_TICK_DAMAGE;
+                    if (hitObj.hp <= 0) {
+                        createExplosion(hitObj.x, hitObj.y, 12 + hitObj.radius);
+                        if (hitObj.el) hitObj.el.remove();
+                        const mi = meteors.indexOf(hitObj);
+                        if (mi >= 0) meteors.splice(mi, 1);
+                    }
+                }
+            }
+            if (Math.random() < 0.5) createExplosion(ox + dx * len, oy + dy * len, 1);
+        }
+
+        // render
+        const sx = ox - cam.x, sy = window.innerHeight - (oy - cam.y);
+        const flick = 0.8 + Math.random() * 0.2;
+        b.root.style.display = '';
+        b.root.style.height = len + 'px';
+        b.root.style.opacity = flick;
+        b.root.style.transform = `translate(${sx - 11}px, ${sy - len}px) rotate(${s.angle}deg) scaleX(${0.85 + Math.random() * 0.3})`;
+
+        b.muzzle.style.display = '';
+        b.muzzle.style.transform = `translate(${sx - 13}px, ${sy - 13}px) scale(${flick})`;
+
+        if (hitObj) {
+            const ex = ox + dx * len - cam.x, ey = window.innerHeight - (oy + dy * len - cam.y);
+            b.hit.style.display = '';
+            b.hit.style.transform = `translate(${ex - 13}px, ${ey - 13}px) scale(${0.8 + Math.random() * 0.8})`;
+        } else {
+            b.hit.style.display = 'none';
+        }
+    }
+}
+
 function updateBullets() {
+    updateBeams();
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
 
@@ -1328,11 +1399,6 @@ const hudDetails = $('hud-details');
 const hudArrow = $('hud-arrow');
 const hudToggle = $('hud-toggle');
 
-if (window.innerWidth > 768 && window.innerHeight > 550) {
-    if (hudDetails) hudDetails.classList.remove('hidden');
-    if (hudArrow) hudArrow.style.transform = 'rotate(180deg)';
-}
-
 if (hudToggle && hudDetails) {
     hudToggle.addEventListener('click', () => {
         const isHidden = hudDetails.classList.contains('hidden');
@@ -1387,4 +1453,3 @@ if (resetBtn) {
 
 player.reset(0, 0, 0); updateCamera();
 requestAnimationFrame(gameLoop);
-

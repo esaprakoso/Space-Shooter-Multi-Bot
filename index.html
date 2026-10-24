@@ -81,32 +81,39 @@
     </div>
 
     <!-- HUD PLAYER 1 (POJOK KANAN ATAS) -->
-    <div class="fixed top-3 right-3 w-48 sm:w-60 z-20 space-y-2">
-        <div id="hud-panel" class="bg-gray-900/90 p-2.5 rounded-lg border border-gray-800 backdrop-blur shadow-lg">
-            <div id="hud-toggle" class="flex justify-between items-center cursor-pointer select-none">
-                <div class="overflow-hidden">
-                    <p class="text-blue-400 font-bold text-[11px] uppercase tracking-wide">PLAYER 1 (BIRU)</p>
-                    <p id="hud-status-mini" class="text-[10px] text-green-400 font-semibold truncate">3 NYAWA · 100% HP</p>
+    <div class="fixed top-3 right-3 z-20 flex flex-col items-end space-y-2">
+        <div id="hud-panel" class="bg-gray-900/80 px-2 py-1.5 rounded-lg border border-gray-800 backdrop-blur shadow-lg">
+            <!-- Bar kecil: selalu tampil -->
+            <div id="hud-toggle" class="flex items-center gap-2 cursor-pointer select-none">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <div class="w-16 sm:w-24 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div id="hud-mini-bar" class="bg-green-500 h-full transition-all duration-150" style="width:100%"></div>
                 </div>
-                <span id="hud-arrow" class="text-xs text-gray-400 ml-1 transition-transform duration-200">▼</span>
+                <span class="text-[9px] text-gray-400 uppercase tracking-wide">Detail</span>
+                <span id="hud-arrow" class="text-[9px] text-gray-400 transition-transform duration-200">▼</span>
+                <!-- dipakai play.js, disembunyikan -->
+                <p id="hud-status-mini" class="hidden"></p>
             </div>
 
-            <div id="hud-details" class="hidden space-y-2 pt-2.5 mt-2 border-t border-gray-800/80">
-                <div>
-                    <div class="flex justify-between text-[10px] font-bold mb-1">
-                        <span class="text-red-400">NYAWA / LIVES</span>
-                        <span id="lives-text" class="text-red-400">❤️❤️❤️ (3)</span>
-                    </div>
+            <!-- Detail: nyawa, hull, ammo -->
+            <div id="hud-details" class="hidden w-44 sm:w-56 space-y-2 pt-2 mt-1.5 border-t border-gray-800/80">
+                <p class="text-blue-400 font-bold text-[10px] uppercase tracking-wide">PLAYER 1 (BIRU)</p>
+
+                <div class="flex justify-between text-[10px] font-bold">
+                    <span class="text-red-400">NYAWA</span>
+                    <span id="lives-text" class="text-red-400">❤️❤️❤️ (3)</span>
                 </div>
+
                 <div>
                     <div class="flex justify-between text-[10px] font-bold mb-1">
-                        <span class="text-green-400">HULL INTEGRITY</span>
+                        <span class="text-green-400">HULL</span>
                         <span id="hull-text" class="text-green-400">100%</span>
                     </div>
-                    <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden border border-green-500/30">
+                    <div class="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden border border-green-500/30">
                         <div id="hull-bar" class="bg-green-500 h-full w-full transition-all duration-150"></div>
                     </div>
                 </div>
+
                 <div>
                     <div class="flex justify-between text-[10px] text-yellow-400 font-bold mb-1">
                         <span>AMMO</span>
@@ -120,7 +127,7 @@
         </div>
 
         <div id="game-over-box"
-            class="hidden bg-red-950/90 border border-red-500/60 p-3 rounded-lg backdrop-blur text-center space-y-2 shadow-lg shadow-red-900/40">
+            class="hidden w-48 bg-red-950/90 border border-red-500/60 p-3 rounded-lg backdrop-blur text-center space-y-2 shadow-lg shadow-red-900/40">
             <div id="status-title"
                 class="flex items-center justify-center gap-1.5 text-red-400 font-bold text-xs uppercase tracking-wider">
                 <span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
@@ -130,6 +137,29 @@
                 class="w-full py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded transition-all cursor-pointer touch-none select-none">
                 RESTART MISSION
             </button>
+        </div>
+    </div>
+
+    <script>
+        // Sinkronkan bar kecil dengan hull-bar yang diupdate play.js
+        (() => {
+            const hull = document.getElementById('hull-bar');
+            const mini = document.getElementById('hud-mini-bar');
+            if (!hull || !mini) return;
+            const sync = () => {
+                mini.className = hull.className.replace('w-full', '') + ' h-full transition-all duration-150';
+                mini.style.width = hull.style.width || '100%';
+            };
+            new MutationObserver(sync).observe(hull, { attributes: true, attributeFilter: ['style', 'class'] });
+            sync();
+        })();
+    </script>
+
+    <!-- BANNER WAVE CLEARED (diatur play.js) -->
+    <div id="wave-banner" class="hidden fixed top-1/4 left-1/2 -translate-x-1/2 z-30 pointer-events-none text-center px-4">
+        <div class="bg-gray-900/85 border border-purple-500/50 backdrop-blur rounded-xl px-6 py-3 shadow-lg shadow-purple-900/30">
+            <p id="banner-title" class="text-lg sm:text-2xl font-black text-purple-300 tracking-wider uppercase">WAVE CLEARED!</p>
+            <p id="banner-subtitle" class="text-[11px] sm:text-xs text-gray-300 mt-1">Persiapan untuk wave berikutnya...</p>
         </div>
     </div>
 
@@ -158,11 +188,13 @@
         <div class="fixed bottom-6 left-48 z-40 flex items-center gap-2">
             <button data-key="ArrowUp"
                 class="touch-none select-none rounded-full border border-orange-400/50 bg-orange-600/30 text-white font-bold flex items-center justify-center w-14 h-14 text-[10px]">THRUST</button>
+
             <button id="btn-shield" data-key="KeyE"
                 class="touch-none select-none rounded-full border border-cyan-400/50 bg-cyan-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px]">
                 <span>SHIELD</span>
                 <span id="shield-cd-text" class="text-[8px] text-cyan-300">READY</span>
             </button>
+
             <button id="btn-backup" data-key="KeyR"
                 class="touch-none select-none rounded-full border border-blue-400/50 bg-blue-600/30 text-white font-bold flex flex-col items-center justify-center w-14 h-14 text-[9px]">
                 <span>BACKUP</span>
@@ -222,4 +254,3 @@
 </body>
 
 </html>
-
