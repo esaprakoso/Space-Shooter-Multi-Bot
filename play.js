@@ -28,24 +28,24 @@ const AVOID_METEOR = 80;
 const AVOID_SHIP = 60;
 
 const TEAMS = {
-    blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
-    red: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171' },
+    blue: { body: '#3B82F6', cockpit: '#93C5FD', glow: '59,130,246', bullet: '#22d3ee' },
+    red: { body: '#EF4444', cockpit: '#FCA5A5', glow: '239,68,68', bullet: '#f87171' },
 };
 
 const BOT_TYPES = {
-    scout: { body: '#F43F5E', cockpit: '#FECDD3', rcs: '#FB7185', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 14, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
-    standard: { body: '#EF4444', cockpit: '#FCA5A5', rcs: '#EF4444', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 18, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
-    heavy: { body: '#991B1B', cockpit: '#F87171', rcs: '#DC2626', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 24, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
+    scout: { body: '#F43F5E', cockpit: '#FECDD3', glow: '244,63,94', bullet: '#fb7185', hp: 60, radius: 14, turn: 0.3, main: 0.18, rev: 0.12, magSize: 8 },
+    standard: { body: '#EF4444', cockpit: '#FCA5A5', glow: '239,68,68', bullet: '#f87171', hp: 100, radius: 18, turn: 0.2, main: 0.12, rev: 0.1, magSize: 6 },
+    heavy: { body: '#991B1B', cockpit: '#F87171', glow: '153,27,27', bullet: '#ef4444', hp: 200, radius: 24, turn: 0.12, main: 0.08, rev: 0.06, magSize: 12 },
 };
 
 const ALLY_BOT_COLORS = {
-    scout: { body: '#38BDF8', cockpit: '#BAE6FD', rcs: '#0284C7', glow: '56,189,248', bullet: '#38bdf8' },
-    standard: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
-    heavy: { body: '#1D4ED8', cockpit: '#93C5FD', rcs: '#2563EB', glow: '29,78,216', bullet: '#60a5fa' },
+    scout: { body: '#38BDF8', cockpit: '#BAE6FD', glow: '56,189,248', bullet: '#38bdf8' },
+    standard: { body: '#3B82F6', cockpit: '#93C5FD', glow: '59,130,246', bullet: '#22d3ee' },
+    heavy: { body: '#1D4ED8', cockpit: '#93C5FD', glow: '29,78,216', bullet: '#60a5fa' },
 };
 
 const STATS = {
-    player: { turn: 0.38, main: 0.25, rev: 0.1, rcsUse: 0, mainUse: 0, mainRegen: 1, cooldown: 120, wallDamage: true, magSize: 20, startMags: 2, maxMags: 5, reload: 1500 },
+    player: { turn: 0.38, main: 0.25, rev: 0.1, rcsUse: 0, mainUse: 0, mainRegen: 1, cooldown: 120, wallDamage: true, magSize: 100, startMags: 2, maxMags: 5, reload: 1500 },
 };
 
 // ================= DOM HUD PLAYER & PAUSE =================
@@ -64,6 +64,8 @@ const shieldCdText = $('shield-cd-text');
 const backupCdText = $('backup-cd-text');
 const btnShield = $('btn-shield');
 const btnBackup = $('btn-backup');
+const btnSpeed = $('btn-speed');
+const speedText = $('speed-text');
 const startScreen = $('start-screen');
 const startBtn = $('start-btn');
 
@@ -90,6 +92,10 @@ let isPaused = false;
 let currentWave = 1;
 let waveState = 'PLAYING';
 let backupCdUntil = 0;
+
+// OPSI KECEPATAN PLAYER (100%, 60%, 30%)
+const SPEED_MODES = [1.0, 0.6, 0.3];
+let currentSpeedIdx = 0;
 
 // ================= UTIL =================
 function setW(el, v) { if (el && el._w !== v) { el._w = v; el.style.width = v; } }
@@ -133,22 +139,7 @@ function createExplosion(cx, cy, count = 24) {
     }
 }
 
-function createThrusterParticle(px, py, angleRad, isRev = false) {
-    if (particles.length >= MAX_PARTICLES) return;
-    const offsetSpeed = isRev ? 2 : -4;
-    const spread = (Math.random() - 0.5) * 1.5;
-    particles.push({
-        x: px + (Math.random() - 0.5) * 4,
-        y: py + (Math.random() - 0.5) * 4,
-        vx: Math.sin(angleRad) * offsetSpeed + spread,
-        vy: Math.cos(angleRad) * offsetSpeed + spread,
-        size: Math.random() * 4 + 2,
-        op: 0.8,
-        color: isRev ? '#38bdf8' : (Math.random() > 0.4 ? '#f97316' : '#eab308'),
-    });
-}
-
-// ================= SISTEM PAUSE =================
+// ================= PAUSE SYSTEM =================
 function pauseGame(reasonText = "Permainan dihentikan sementara") {
     if (!gameStarted || isPaused) return;
     isPaused = true;
@@ -166,7 +157,6 @@ function togglePause() {
     if (isPaused) resumeGame(); else pauseGame();
 }
 
-// Handler Auto-Pause saat berpindah tab atau memutar ke portrait
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) pauseGame("Berpindah aplikasi / tab");
 });
@@ -181,6 +171,12 @@ function checkOrientationPause() {
     }
 }
 window.addEventListener('resize', checkOrientationPause);
+
+function toggleSpeedMode() {
+    currentSpeedIdx = (currentSpeedIdx + 1) % SPEED_MODES.length;
+    const speedPct = Math.round(SPEED_MODES[currentSpeedIdx] * 100);
+    if (speedText) speedText.textContent = `${speedPct}%`;
+}
 
 // ================= KOMPONEN: SHIP =================
 class Ship {
@@ -198,7 +194,6 @@ class Ship {
             this.c = {
                 body: BOT_TYPES[botType].body,
                 cockpit: BOT_TYPES[botType].cockpit,
-                rcs: BOT_TYPES[botType].rcs,
                 glow: BOT_TYPES[botType].glow,
                 bullet: BOT_TYPES[botType].bullet,
             };
@@ -235,17 +230,11 @@ class Ship {
         const el = document.createElement('div');
         el.className = 'fixed left-0 top-0 w-10 h-12 pointer-events-none z-10';
         el.style.willChange = 'transform';
+        // Hanya gambar kapal bersih tanpa visual RCS & Thruster
         el.innerHTML = `
         <div data-fx="shield-aura" class="absolute -inset-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse" style="display:none"></div>
         <svg viewBox="-8 -6 40 42" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full"
              style="filter:drop-shadow(0 0 8px rgba(${c.glow},0.8))">
-            <path data-fx="thrust" d="M9 28L12 38L15 28Z" fill="#F97316" style="display:none"/>
-            <path data-fx="left" d="M1 22L-5 24L1 26Z" fill="${c.rcs}" style="display:none"/>
-            <path data-fx="right" d="M23 22L29 24L23 26Z" fill="${c.rcs}" style="display:none"/>
-            <g data-fx="rev" style="display:none">
-                <path d="M4 12L-1 6L6 9Z" fill="${c.rcs}"/>
-                <path d="M20 12L25 6L18 9Z" fill="${c.rcs}"/>
-            </g>
             <path d="M12 2L24 26L12 21L0 26L12 2Z" fill="${c.body}"/>
             <path d="M12 6L16 16L12 14L8 16L12 6Z" fill="${c.cockpit}"/>
         </svg>`;
@@ -319,7 +308,12 @@ class Ship {
             keys.KeyR = false;
         }
 
-        // Joystick Logic
+        if (k.ShiftLeft || k.ShiftRight || k.KeyZ) {
+            toggleSpeedMode();
+            keys.ShiftLeft = false; keys.ShiftRight = false; keys.KeyZ = false;
+        }
+
+        // Virtual Joystick Logic
         const joyDist = Math.hypot(joy.dx, joy.dy);
         if (joy.active && joyDist > 0.25) {
             let joyAngle = (Math.atan2(joy.dx, joy.dy) * 180) / Math.PI;
@@ -394,7 +388,7 @@ class Ship {
         }
         for (const s of ships) {
             if (s === this || s.dead) continue;
-            const d = Math.hypot(this.x - s.x, this.y - s.y) || 0.01;
+            const d = Math.hypot(this.x - s.x, s.y - s.y) || 0.01;
             const range = RADIUS * 2 + AVOID_SHIP;
             if (d < range) {
                 const f = (range - d) / range;
@@ -432,6 +426,7 @@ class Ship {
 
     step(ts) {
         const p = this.p, i = this.input;
+        const speedFactor = this.isPlayer ? SPEED_MODES[currentSpeedIdx] : 1.0;
 
         if (this.isPlayer) {
             this.rcs = MAX_FUEL;
@@ -453,20 +448,8 @@ class Ship {
 
         if (left) this.vAngle -= p.turn;
         if (right) this.vAngle += p.turn;
-        if (rev) { this.vx -= p.rev * Math.sin(rad); this.vy -= p.rev * Math.cos(rad); }
-        if (thrust) { this.vx += p.main * Math.sin(rad); this.vy += p.main * Math.cos(rad); }
-
-        // JEJAK MESIN
-        if (thrust) {
-            const px = this.x - Math.sin(rad) * 20;
-            const py = this.y - Math.cos(rad) * 20;
-            createThrusterParticle(px, py, rad, false);
-        }
-        if (rev) {
-            const px = this.x + Math.sin(rad) * 12;
-            const py = this.y + Math.cos(rad) * 12;
-            createThrusterParticle(px, py, rad, true);
-        }
+        if (rev) { this.vx -= p.rev * speedFactor * Math.sin(rad); this.vy -= p.rev * speedFactor * Math.cos(rad); }
+        if (thrust) { this.vx += p.main * speedFactor * Math.sin(rad); this.vy += p.main * speedFactor * Math.cos(rad); }
 
         if (!this.isPlayer) {
             const rcsUsed = left || right || rev;
@@ -475,7 +458,7 @@ class Ship {
         }
 
         const isShieldActive = !!(this.shieldUntil && performance.now() < this.shieldUntil);
-        this.fx = { left, right, rev, thrust, 'shield-aura': isShieldActive };
+        this.fx = { 'shield-aura': isShieldActive };
 
         this.vAngle *= ANG_FRICTION;
         this.angle += this.vAngle;
@@ -500,59 +483,58 @@ class Ship {
         const isHoming = !!(this.homingUntil && now < this.homingUntil);
         const isMulti = !!(this.multishotUntil && now < this.multishotUntil);
 
+        // Posisi moncong terkalibrasi tepat di ujung atas moncong kapal (24px dari pusat)
+        const rad = (this.angle * Math.PI) / 180;
+        const spawnX = this.x + Math.sin(rad) * 24;
+        const spawnY = this.y + Math.cos(rad) * 24;
+
         if (isLaser) {
-            const rad = (this.angle * Math.PI) / 180;
-            const spawnX = this.x + Math.sin(rad) * 20;
-            const spawnY = this.y + Math.cos(rad) * 20;
             const el = document.createElement('div');
             el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:10px;height:32px;background:#c084fc;box-shadow:0 0 12px #c084fc`;
             document.body.appendChild(el);
             bullets.push({
-                el, owner: this, angle: this.angle, life: BULLET_LIFE, damage: 35,
+                el, owner: this, angle: this.angle, life: BULLET_LIFE, damage: 35, color: '#c084fc', trail: [],
                 x: spawnX, y: spawnY,
                 vx: this.vx + 22 * Math.sin(rad), vy: this.vy + 22 * Math.cos(rad),
             });
 
         } else if (isHoming) {
-            [-10, 10].forEach(offsetDeg => {
+            [-8, 8].forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
-                const rad = (ang * Math.PI) / 180;
-                const spawnX = this.x + Math.sin(rad) * 16;
-                const spawnY = this.y + Math.cos(rad) * 16;
+                const r = (ang * Math.PI) / 180;
+                const sx = this.x + Math.sin(r) * 22;
+                const sy = this.y + Math.cos(r) * 22;
                 const el = document.createElement('div');
                 el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:14px;background:#fb923c;box-shadow:0 0 8px #fb923c`;
                 document.body.appendChild(el);
                 bullets.push({
-                    el, owner: this, angle: ang, life: BULLET_LIFE * 1.2, damage: 22, homing: true,
-                    x: spawnX, y: spawnY,
-                    vx: this.vx + 12 * Math.sin(rad), vy: this.vy + 12 * Math.cos(rad),
+                    el, owner: this, angle: ang, life: BULLET_LIFE * 1.2, damage: 22, homing: true, color: '#fb923c', trail: [],
+                    x: sx, y: sy,
+                    vx: this.vx + 12 * Math.sin(r), vy: this.vy + 12 * Math.cos(r),
                 });
             });
 
         } else if (isMulti) {
             [this.angle - 12, this.angle, this.angle + 12].forEach(ang => {
-                const rad = (ang * Math.PI) / 180;
-                const spawnX = this.x + Math.sin(rad) * 16;
-                const spawnY = this.y + Math.cos(rad) * 16;
+                const r = (ang * Math.PI) / 180;
+                const sx = this.x + Math.sin(r) * 22;
+                const sy = this.y + Math.cos(r) * 22;
                 const el = document.createElement('div');
                 el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
                 document.body.appendChild(el);
                 bullets.push({
-                    el, owner: this, angle: ang, life: BULLET_LIFE, damage: BULLET_DAMAGE,
-                    x: spawnX, y: spawnY,
-                    vx: this.vx + 14 * Math.sin(rad), vy: this.vy + 14 * Math.cos(rad),
+                    el, owner: this, angle: ang, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
+                    x: sx, y: sy,
+                    vx: this.vx + 14 * Math.sin(r), vy: this.vy + 14 * Math.cos(r),
                 });
             });
 
         } else {
-            const rad = (this.angle * Math.PI) / 180;
-            const spawnX = this.x + Math.sin(rad) * 16;
-            const spawnY = this.y + Math.cos(rad) * 16;
             const el = document.createElement('div');
             el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;border-radius:9999px;will-change:transform;width:8px;height:16px;background:${this.c.bullet};box-shadow:0 0 6px ${this.c.bullet}`;
             document.body.appendChild(el);
             bullets.push({
-                el, owner: this, angle: this.angle, life: BULLET_LIFE, damage: BULLET_DAMAGE,
+                el, owner: this, angle: this.angle, life: BULLET_LIFE, damage: BULLET_DAMAGE, color: this.c.bullet, trail: [],
                 x: spawnX, y: spawnY,
                 vx: this.vx + 14 * Math.sin(rad), vy: this.vy + 14 * Math.cos(rad),
             });
@@ -687,7 +669,6 @@ class Ship {
             setTxt(ammoText, `${ammoTxt}${weaponTag}`);
             setTxt($('hud-status-mini'), `${this.lives} NYAWA · ${Math.round(this.hull)}% HP`);
 
-            // UI Button Shield & CD
             if (now < this.shieldUntil) {
                 setTxt(shieldCdText, `${Math.ceil((this.shieldUntil - now) / 1000)}s`);
                 if (btnShield) btnShield.style.opacity = '1';
@@ -699,7 +680,6 @@ class Ship {
                 if (btnShield) btnShield.style.opacity = '1';
             }
 
-            // UI Button Backup & CD
             if (now < backupCdUntil) {
                 setTxt(backupCdText, `${Math.ceil((backupCdUntil - now) / 1000)}s`);
                 if (btnBackup) btnBackup.style.opacity = '0.4';
@@ -878,10 +858,15 @@ function updateMeteors() {
     }
 }
 
-// ================= PELURU & RUDAL HOMING =================
+// ================= PELURU & JEJAK PELURU (BULLET TRAIL) =================
 function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
+
+        // Simpan riwayat posisi untuk jejak ekor peluru (trail)
+        if (!b.trail) b.trail = [];
+        b.trail.push({ x: b.x, y: b.y });
+        if (b.trail.length > 6) b.trail.shift();
 
         if (b.homing) {
             let target = null, minDist = 600;
@@ -1059,6 +1044,8 @@ function updateBackground() {
 function updateEffects() {
     const h = fxCanvas.height;
     fxCtx.clearRect(0, 0, fxCanvas.width, h);
+
+    // Render Partikel Ledakan
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         if (!isPaused) {
@@ -1069,6 +1056,33 @@ function updateEffects() {
         fxCtx.fillStyle = p.color;
         fxCtx.fillRect(p.x - cam.x - p.size / 2, h - (p.y - cam.y) - p.size / 2, p.size, p.size);
     }
+
+    // Render Jejak Peluru (Bullet Trails)
+    bullets.forEach(b => {
+        if (!b.trail || b.trail.length < 2) return;
+        fxCtx.save();
+        fxCtx.strokeStyle = b.color || '#22d3ee';
+        fxCtx.lineWidth = 2.5;
+        fxCtx.lineCap = 'round';
+        fxCtx.shadowColor = b.color || '#22d3ee';
+        fxCtx.shadowBlur = 6;
+
+        fxCtx.beginPath();
+        b.trail.forEach((pt, idx) => {
+            const sx = pt.x - cam.x;
+            const sy = h - (pt.y - cam.y);
+            if (idx === 0) fxCtx.moveTo(sx, sy);
+            else fxCtx.lineTo(sx, sy);
+        });
+        const currentSx = b.x - cam.x;
+        const currentSy = h - (b.y - cam.y);
+        fxCtx.lineTo(currentSx, currentSy);
+
+        fxCtx.globalAlpha = 0.65;
+        fxCtx.stroke();
+        fxCtx.restore();
+    });
+
     fxCtx.globalAlpha = 1;
     drawShipIndicators();
 }
@@ -1133,6 +1147,7 @@ window.addEventListener('keydown', (e) => {
     if (!isPaused) {
         if (e.code === 'KeyE' && player) player.activateShield();
         if (e.code === 'KeyR') requestBackup();
+        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyZ') toggleSpeedMode();
     }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -1158,6 +1173,9 @@ if (btnShield) {
 }
 if (btnBackup) {
     btnBackup.addEventListener('pointerdown', (e) => { e.preventDefault(); if (!isPaused) requestBackup(); });
+}
+if (btnSpeed) {
+    btnSpeed.addEventListener('pointerdown', (e) => { e.preventDefault(); toggleSpeedMode(); });
 }
 
 if (pauseBtn) {
