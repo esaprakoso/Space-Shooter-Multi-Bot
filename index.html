@@ -183,6 +183,18 @@
             SKOR <span id="score-count" class="text-white">0</span></div>
     </div>
 
+    <!-- COMBO & POWER-UP SPREAD AKTIF -->
+    <div class="fixed top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 text-[11px] font-bold pointer-events-none">
+        <div id="combo-box" class="hidden bg-gray-900/85 px-2.5 py-1 rounded-lg border border-yellow-500/50 backdrop-blur text-yellow-300 w-24">
+            <div class="flex justify-between"><span>COMBO</span><span id="combo-text" class="text-white">x2</span></div>
+            <div class="w-full h-0.5 mt-0.5 bg-gray-800 rounded-full overflow-hidden">
+                <div id="combo-bar" class="h-full bg-yellow-400" style="width:100%"></div>
+            </div>
+        </div>
+        <div id="spread-box" class="hidden bg-gray-900/85 px-2.5 py-1 rounded-lg border border-teal-500/50 backdrop-blur text-teal-300">
+            SPREAD <span id="spread-text" class="text-white">0s</span></div>
+    </div>
+
     <!-- KONTROL SENTUH (landscape) -->
     <div id="touch-controls">
         <div id="joy-base"

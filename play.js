@@ -16,12 +16,16 @@ const METEOR_TYPES = [
     { r: 12, hp: 120 },
 ];
 const PICKUP_MAX = 8;
-const PICKUP_SPAWN_CHANCE = 0.008;
+const PICKUP_DROP_CHANCE = 0.18;   // peluang musuh menjatuhkan pickup saat hancur (15-20%)
+const DROP_WEIGHTS = { health: 25, mag: 20, laser: 17, homing: 17, multi: 15, life: 6 };
 const PICKUP_RADIUS = 8;
 const PICKUP_SEEK = 900;
 const HEAL_AMOUNT = 30;
 const MAG_AMOUNT = 1;
 const WEAPON_DURATION = 9000;
+const WEAPON_STACK_MAX = 3;       // durasi power-up maks = 3x WEAPON_DURATION
+const WEAPON_KEYS = { laser: 'laserUntil', homing: 'homingUntil', multi: 'multiUntil' };
+const SPREAD_ANGLES = [-10, 0, 10];
 const SHIELD_DURATION = 5000;
 const SHIELD_COOLDOWN = 15000;
 const AVOID_METEOR = 90;
@@ -31,11 +35,14 @@ const LASER_RANGE = 650;       // jarak maks beam (px)
 const LASER_TICK = 100;        // interval damage (ms)
 const LASER_TICK_DAMAGE = 4;   // ~40 dps
 const BOT_LASER_FACTOR = 0.5;  // damage laser bot = 50% dari player
+const LASER_WARMUP = 400;      // pemanasan laser bot: garis peringatan sebelum beam penuh (ms)
 
 const STEP = 1000 / 60;        // fixed timestep: fisika selalu 60 Hz
 const SCORE_BY_TYPE = { scout: 100, standard: 150, heavy: 300 };
 const WAVE_BONUS = 250;        // x nomor wave
 const BEST_KEY = 'ssmb_best_score';
+const COMBO_WINDOW = 3000;     // kill berikutnya harus terjadi dalam jendela ini (ms)
+const COMBO_MAX = 5;           // pengali maksimum
 
 const TEAMS = {
     blue: { body: '#3B82F6', cockpit: '#93C5FD', rcs: '#38BDF8', glow: '59,130,246', bullet: '#22d3ee' },
@@ -87,6 +94,8 @@ const btnHoming = $('btn-homing');
 const homingTimerText = $('homing-timer-text');
 const startScreen = $('start-screen');
 const startBtn = $('start-btn');
+const comboBox = $('combo-box'), comboText = $('combo-text'), comboBar = $('combo-bar');
+const spreadBox = $('spread-box'), spreadText = $('spread-text');
 
 const pauseScreen = $('pause-screen');
 const pauseReason = $('pause-reason');
@@ -119,6 +128,7 @@ let lastTs = 0, accumulator = 0;
 let waveStartAt = 0;
 
 let score = 0, best = 0, bestBefore = 0;
+let comboCount = 0, comboUntil = 0;
 try { best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) { /* abaikan */ }
 if (bestText) bestText.textContent = best;
 
@@ -237,6 +247,9 @@ class Ship {
         this.shieldCdUntil = 0;
         this.laserUntil = 0;
         this.homingUntil = 0;
+        this.multiUntil = 0;
+        this.laserWarmAt = 0;
+        this.laserWarming = false;
         this.lastLaserShot = 0;
         this.lastHomingShot = 0;
 
@@ -296,8 +309,8 @@ class Ship {
             mainEmpty: false, rcsEmpty: false,
             ammo: this.p.magSize, mags: this.p.startMags, reloadUntil: 0,
             dead: false, invuln: false, lastShot: 0, joyHold: 0, lastJoyAngle: 0,
-            shieldUntil: 0, shieldCdUntil: 0, laserUntil: 0, homingUntil: 0,
-            lastLaserShot: 0, lastHomingShot: 0, laserOn: false,
+            shieldUntil: 0, shieldCdUntil: 0, laserUntil: 0, homingUntil: 0, multiUntil: 0,
+            lastLaserShot: 0, lastHomingShot: 0, laserOn: false, laserWarmAt: 0, laserWarming: false,
             invulnUntil: 0, respawnAt: 0,
             input: {}, fx: {},
         });
@@ -506,7 +519,12 @@ class Ship {
         if (!this.reloadUntil && this.ammo < 1 && this.mags > 0) this.reloadUntil = ts + p.reload;
 
         // LASER: beam aktif selama Q atau FIRE ditahan
-        this.laserOn = !!(this.laserUntil && now < this.laserUntil && (i.laserHold || i.shoot));
+        // Bot butuh LASER_WARMUP ms pemanasan (garis peringatan) sebelum beam penuh; player instan.
+        const laserWant = !!(this.laserUntil && now < this.laserUntil && (i.laserHold || i.shoot));
+        if (!laserWant) this.laserWarmAt = 0;
+        else if (!this.isPlayer && !this.laserWarmAt) this.laserWarmAt = now;
+        this.laserOn = laserWant && (this.isPlayer || now - this.laserWarmAt >= LASER_WARMUP);
+        this.laserWarming = laserWant && !this.laserOn;
 
         // PENANGANAN HOLD UNTUK MISSILE (Rentetan rudal pelacak)
         if (i.homingHold && this.homingUntil && now < this.homingUntil) {
@@ -517,9 +535,11 @@ class Ship {
         }
 
         // PENANGANAN TEMBAKAN PELURU STANDAR
-        if (i.shoot && !this.laserOn && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
+        if (i.shoot && !laserWant && !this.reloadUntil && this.ammo >= 1 && ts - this.lastShot > p.cooldown) {
             if (this.homingUntil && now < this.homingUntil) {
                 this.shootSpecial('homing');
+            } else if (this.multiUntil && now < this.multiUntil) {
+                for (const o of SPREAD_ANGLES) this.shootStandard(o);   // 1 ammo = 3 peluru
             } else {
                 this.shootStandard();
             }
@@ -528,8 +548,8 @@ class Ship {
         }
     }
 
-    shootStandard() {
-        const rad = (this.angle * Math.PI) / 180;
+    shootStandard(offsetDeg = 0) {
+        const rad = ((this.angle + offsetDeg) * Math.PI) / 180;
         const spawnX = this.x + Math.sin(rad) * 12;
         const spawnY = this.y + Math.cos(rad) * 12;
         const vx = this.vx + 14 * Math.sin(rad);
@@ -551,7 +571,8 @@ class Ship {
         const spawnY = this.y + Math.cos(rad) * 12;
 
         if (type === 'homing') {
-            [-6, 6].forEach(offsetDeg => {
+            const spread = !!(this.multiUntil && gameTime < this.multiUntil);
+            (spread ? [-14, -6, 6, 14] : [-6, 6]).forEach(offsetDeg => {
                 const ang = this.angle + offsetDeg;
                 const r = (ang * Math.PI) / 180;
                 const sx = this.x + Math.sin(r) * 12;
@@ -595,6 +616,7 @@ class Ship {
 
         if (this.isPlayer) {
             this.lives--;
+            comboCount = 0; comboUntil = 0;
             if (this.el) this.el.classList.add('hidden');
 
             if (this.lives > 0) {
@@ -605,8 +627,9 @@ class Ship {
             }
         } else {
             if (source && source.team === PLAYER_TEAM && this.team !== PLAYER_TEAM) {
-                addScore(SCORE_BY_TYPE[this.botType] || 100);
+                addScore((SCORE_BY_TYPE[this.botType] || 100) * registerKill());
             }
+            if (this.team !== PLAYER_TEAM && Math.random() < PICKUP_DROP_CHANCE) spawnPickup(this.x, this.y);
             this.remove();
             checkWaveProgress();
         }
@@ -624,6 +647,8 @@ class Ship {
         if (type === 'health') return this.hull < this.maxHp;
         if (type === 'mag') return this.mags < this.p.maxMags;
         if (type === 'life') return this.isPlayer && this.lives < MAX_LIVES;
+        const wk = WEAPON_KEYS[type];
+        if (wk) return this[wk] - gameTime < WEAPON_DURATION * WEAPON_STACK_MAX - 1;   // sudah mentok: jangan buang pickup
         return true;
     }
 
@@ -634,16 +659,10 @@ class Ship {
         else if (type === 'life') {
             if (this.isPlayer) this.lives = Math.min(MAX_LIVES, this.lives + 1);
             createExplosion(this.x, this.y, 18);
-        } else if (type === 'laser') {
-            this.laserUntil = now + WEAPON_DURATION;
-            this.homingUntil = 0;
-            createExplosion(this.x, this.y, 16);
-        } else if (type === 'homing') {
-            this.homingUntil = now + WEAPON_DURATION;
-            this.laserUntil = 0;
-            createExplosion(this.x, this.y, 16);
-        } else if (type === 'multi') {
-            this.laserUntil = now + WEAPON_DURATION;
+        } else if (WEAPON_KEYS[type]) {
+            // menumpuk: jenis sama memperpanjang durasi, jenis berbeda berjalan bersamaan
+            const k = WEAPON_KEYS[type];
+            this[k] = Math.min(Math.max(this[k], now) + WEAPON_DURATION, now + WEAPON_DURATION * WEAPON_STACK_MAX);
             createExplosion(this.x, this.y, 16);
         }
     }
@@ -685,6 +704,14 @@ class Ship {
             } else {
                 if (btnHoming) btnHoming.classList.add('hidden');
             }
+
+            if (this.multiUntil && now < this.multiUntil) {
+                if (spreadBox) spreadBox.classList.remove('hidden');
+                setTxt(spreadText, `${Math.ceil((this.multiUntil - now) / 1000)}s`);
+            } else if (spreadBox) {
+                spreadBox.classList.add('hidden');
+            }
+            updateComboHud();
 
             const noAmmo = !this.reloadUntil && this.ammo < 1 && this.mags < 1;
             const ammoTxt = noAmmo ? 'NO AMMO' : this.reloadUntil ? `RELOAD · MAG ${this.mags}` : `${this.ammo}/${this.p.magSize} · MAG ${this.mags}`;
@@ -759,9 +786,25 @@ function addScore(n) {
     }
 }
 
+function registerKill() {
+    comboCount = gameTime < comboUntil ? comboCount + 1 : 1;
+    comboUntil = gameTime + COMBO_WINDOW;
+    return Math.min(COMBO_MAX, comboCount);
+}
+
+function updateComboHud() {
+    const active = comboCount >= 2 && gameTime < comboUntil;
+    if (comboBox) comboBox.classList.toggle('hidden', !active);
+    if (active) {
+        setTxt(comboText, 'x' + Math.min(COMBO_MAX, comboCount));
+        setW(comboBar, `${((comboUntil - gameTime) / COMBO_WINDOW) * 100}%`);
+    }
+}
+
 function startWave(waveNum) {
     currentWave = waveNum;
     if (waveNum === 1) {
+        comboCount = 0; comboUntil = 0;
         score = 0;
         bestBefore = best;
         waveStartAt = 0;
@@ -938,7 +981,8 @@ function ensureBeam(s) {
     root.style.cssText = 'position:fixed;left:0;top:0;width:22px;pointer-events:none;z-index:9;will-change:transform;transform-origin:50% 100%;display:none';
     root.innerHTML = `
         <div style="position:absolute;inset:0;background:linear-gradient(90deg,${c}00,${c}aa 35%,${c}aa 65%,${c}00);filter:blur(3px)"></div>
-        <div style="position:absolute;top:0;bottom:0;left:50%;width:4px;margin-left:-2px;border-radius:2px;background:#fff;box-shadow:0 0 6px #fff,0 0 14px ${c},0 0 28px ${c}"></div>`;
+        <div style="position:absolute;top:0;bottom:0;left:50%;width:4px;margin-left:-2px;border-radius:2px;background:#fff;box-shadow:0 0 6px #fff,0 0 14px ${c},0 0 28px ${c}"></div>
+        <div style="display:none;position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:${c};box-shadow:0 0 4px ${c}"></div>`;
     const flash = () => {
         const d = document.createElement('div');
         d.style.cssText = `position:fixed;left:0;top:0;width:26px;height:26px;pointer-events:none;z-index:9;border-radius:9999px;will-change:transform;display:none;background:radial-gradient(circle,#fff 0%,${c} 40%,${c}00 70%)`;
@@ -946,7 +990,7 @@ function ensureBeam(s) {
         return d;
     };
     document.body.appendChild(root);
-    s.beam = { root, muzzle: flash(), hit: flash(), lastTick: 0 };
+    s.beam = { root, muzzle: flash(), hit: flash(), lastTick: 0, glow: root.children[0], core: root.children[1], warn: root.children[2], warm: false };
     return s.beam;
 }
 
@@ -957,7 +1001,7 @@ function hideBeam(b) {
 function updateBeams() {
     for (const s of [...ships]) {
         const b = s.beam;
-        if (!s.laserOn || s.dead) { if (b) b.state = null; continue; }
+        if (!(s.laserOn || s.laserWarming) || s.dead) { if (b) b.state = null; continue; }
         const bm = ensureBeam(s);
         const rad = (s.angle * Math.PI) / 180;
         const dx = Math.sin(rad), dy = Math.cos(rad);
@@ -977,7 +1021,7 @@ function updateBeams() {
         for (const t of ships) if (!t.dead && t !== s && t.team !== s.team) test(t, t.radius, 'ship');
         for (const m of meteors) test(m, m.radius, 'meteor');
 
-        if (hitObj) {
+        if (hitObj && s.laserOn) {   // saat pemanasan: hanya garis, tanpa damage
             if (gameTime - bm.lastTick >= LASER_TICK) {
                 bm.lastTick = gameTime;
                 const dmg = s.isPlayer ? LASER_TICK_DAMAGE : LASER_TICK_DAMAGE * BOT_LASER_FACTOR;
@@ -996,7 +1040,11 @@ function updateBeams() {
             if (Math.random() < 0.5) createExplosion(ox + dx * len, oy + dy * len, 1);
         }
 
-        bm.state = { ox, oy, dx, dy, len, hit: !!hitObj, angle: s.angle };
+        bm.state = {
+            ox, oy, dx, dy, len, hit: !!hitObj && s.laserOn, angle: s.angle,
+            warm: !s.laserOn,
+            prog: s.laserOn ? 1 : Math.min(1, (gameTime - s.laserWarmAt) / LASER_WARMUP),
+        };
     }
 }
 
@@ -1009,14 +1057,25 @@ function renderBeams() {
         if (!st || s.dead) { hideBeam(b); continue; }
 
         const sx = st.ox - cam.x, sy = window.innerHeight - (st.oy - cam.y);
-        const flick = 0.8 + Math.random() * 0.2;
+        if (b.warm !== st.warm) {
+            b.warm = st.warm;
+            b.glow.style.display = b.core.style.display = st.warm ? 'none' : '';
+            b.warn.style.display = st.warm ? '' : 'none';
+        }
+        // pemanasan: garis tipis redup yang makin terang mendekati beam penuh
+        const flick = st.warm ? 0.2 + 0.4 * st.prog : 0.8 + Math.random() * 0.2;
+        const sclX = st.warm ? 1 : 0.85 + Math.random() * 0.3;
         b.root.style.display = '';
         b.root.style.height = st.len + 'px';
         b.root.style.opacity = flick;
-        b.root.style.transform = `translate(${sx - 11}px, ${sy - st.len}px) rotate(${st.angle}deg) scaleX(${0.85 + Math.random() * 0.3})`;
+        b.root.style.transform = `translate(${sx - 11}px, ${sy - st.len}px) rotate(${st.angle}deg) scaleX(${sclX})`;
 
-        b.muzzle.style.display = '';
-        b.muzzle.style.transform = `translate(${sx - 13}px, ${sy - 13}px) scale(${flick})`;
+        if (st.warm) {
+            b.muzzle.style.display = 'none';
+        } else {
+            b.muzzle.style.display = '';
+            b.muzzle.style.transform = `translate(${sx - 13}px, ${sy - 13}px) scale(${flick})`;
+        }
 
         if (st.hit) {
             const ex = st.ox + st.dx * st.len - cam.x;
@@ -1096,25 +1155,29 @@ const PICKUP_TYPES = {
     homing: { color: '#f97316', icon: '<path d="M12 2l4 8-4-2-4 2 4-8zm0 8l3 12-3-2-3 2 3-12z" fill="#fff"/>' },
 };
 
-function spawnPickup() {
-    if (pickups.length >= PICKUP_MAX) return;
-    const types = ['health', 'mag', 'life', 'laser', 'homing'];
-    const type = types[Math.floor(Math.random() * types.length)];
+function rollDropType() {
+    let r = Math.random() * Object.values(DROP_WEIGHTS).reduce((a, b) => a + b, 0);
+    for (const [type, w] of Object.entries(DROP_WEIGHTS)) { if ((r -= w) < 0) return type; }
+    return 'health';
+}
+
+// Pickup hanya muncul dari musuh yang hancur (x, y = posisi musuh)
+function spawnPickup(x, y) {
+    if (pickups.length >= PICKUP_MAX) {   // penuh: buang yang paling lama
+        const old = pickups.shift();
+        if (old.el) old.el.remove();
+    }
+    const type = rollDropType();
     const c = PICKUP_TYPES[type];
     const el = document.createElement('div');
     el.style.cssText = `position:fixed;left:0;top:0;pointer-events:none;z-index:10;will-change:transform;width:${PICKUP_RADIUS * 2}px;height:${PICKUP_RADIUS * 2}px`;
     el.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%">
         <rect x="1" y="1" width="22" height="22" rx="5" fill="${c.color}" stroke="#fff" stroke-opacity=".7"/>${c.icon}</svg>`;
     document.body.appendChild(el);
-    pickups.push({
-        el, type,
-        x: cam.x + (Math.random() * 2.0 - 0.5) * window.innerWidth,
-        y: cam.y + (Math.random() * 2.0 - 0.5) * window.innerHeight,
-    });
+    pickups.push({ el, type, x, y });
 }
 
 function updatePickups() {
-    if (Math.random() < PICKUP_SPAWN_CHANCE) spawnPickup();
     const far = Math.hypot(window.innerWidth, window.innerHeight) * 1.8;
 
     for (let i = pickups.length - 1; i >= 0; i--) {
